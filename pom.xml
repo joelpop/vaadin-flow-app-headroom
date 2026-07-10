@@ -4,21 +4,21 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.vaadin.addons.example</groupId>
-    <artifactId>clock</artifactId>
-    <version>1.0.0</version>
-    <name>Clock</name>
-    <description>Clock widget example for Vaadin</description>
+    <groupId>org.vaadin.addons.joelpop</groupId>
+    <artifactId>flow-app-headroom</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <name>Vaadin Flow App Headroom</name>
+    <description>Scroll-aware collapsing app bar for Vaadin applications</description>
 
     <properties>
-        <vaadin.version>25.2.1</vaadin.version>
-        <maven.compiler.release>21</maven.compiler.release>
+        <vaadin.version>25.1.6</vaadin.version>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <organization>
-        <name>###author###</name>
+        <name>Joel Robertson</name>
     </organization>
     <licenses>
         <license>
@@ -49,12 +49,7 @@
     <dependencies>
         <dependency>
             <groupId>com.vaadin</groupId>
-            <artifactId>flow-server</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.vaadin</groupId>
             <artifactId>vaadin-core</artifactId>
-            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -108,6 +103,11 @@
                     <groupId>org.eclipse.jetty.ee11</groupId>
                     <artifactId>jetty-ee11-maven-plugin</artifactId>
                     <version>12.1.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
