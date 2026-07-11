@@ -1,60 +1,112 @@
-# Add-on template for Vaadin with an embedded Lit component 
+# vaadin-flow-app-headroom
 
-![clock-element](https://user-images.githubusercontent.com/991105/184157011-9cdd51bb-2a57-4698-9fbb-e539d382e99f.png)
+A Vaadin Flow component that hides the app header when the user scrolls down and restores it when they scroll up — the "headroom" pattern.
 
-You should start from this project, if your add-on will be based on custom Lit HTML element (that you are not planning to publish through npm) and provide Java API for the rest of the application.
-As an example this project implements a simple clock-element to display current time based on browser. 
+## Table of Contents
 
-## Add-on architecture
-![client-server-addon](https://user-images.githubusercontent.com/991105/211867227-2c71ee29-9ea6-4de0-a5e4-2bf53781628d.svg)
+- [How it works](#how-it-works)
+- [Requirement](#requirement)
+- [Usage](#usage)
+  - [With vaadin-flow-app-nav-layout (recommended)](#with-vaadin-flow-app-nav-layout-recommended)
+  - [Standalone](#standalone)
+- [Configuration](#configuration)
+- [Development](#development)
+  - [Running the demo](#running-the-demo)
+  - [Integration tests](#integration-tests)
+- [Publishing to Vaadin Directory](#publishing-to-vaadin-directory)
 
-### Alternative add-on templates
+## How it works
 
-If you wish to build and publish an add-on or extension in [Vaadin Directory](https://vaadin.com/directory), Vaadin provides the following three template projects:
- 1. [vaadin/addon-template](https://github.com/vaadin/addon-template): Create a composite component. This Java-only template is the easiest when extending Vaadin Java components.
- 2. **(this repo)** [vaadin/client-server-addon-template](https://github.com/vaadin/client-server-addon-template): Build a standalone, client-server TypeScript-Java component. This template provides you with a [Lit-based](https://github.com/lit/lit/) example to start with.
- 3. [vaadin/npm-addon-template](https://github.com/vaadin/npm-addon-template): Wrap a web component from [npmjs.com](https://npmjs.com/) as a Vaadin Java component.
+- Always shown within the first `topOffset` px from the top of the page (default: **100 px**)
+- Hides after the user scrolls down more than `hideTolerance` px past a high-water mark (default: **30 px**)
+- Restores after the user scrolls up more than `showTolerance` px from the hidden position (default: **30 px**)
+- Guards against bottom overscroll/bounce on iOS causing a false restore
+- Animates with `transform: translateY(±100%)` and a 600 ms ease transition — no layout shifts, no JavaScript-driven height recalculations
 
+The component is a LitElement web component (`<app-headroom>`) backed by `AppHeadroom.java`. It injects global CSS that enables body-scrolling on touch devices and animates `vaadin-app-layout`'s internal `::part(navbar-top)` and `::part(navbar-bottom)` slots.
 
-## Development instructions
+## Requirement
 
-### Important Files 
+The component attaches a passive `scroll` listener to `window`, so **body-scrolling mode must be active on touch devices** (`window.scrollY` must be meaningful). The component sets this automatically via an injected media-query rule:
 
-Component implementation and API:
-* Clock.java: Add-on component Java class. Provides server-side Java API to use component in your applications.
-* clock-element.ts: TypeScript file that defines the client-side part of the component.
-* clock-element.css: Default styles for the component.
+```css
+@media (pointer: coarse) {
+    html { height: auto; }
+}
+```
 
-For testing and development:
-* TestView.java: A View class that let's you test the component you are building. This and other classes in the test folder will not be packaged during the build. You can add more test view classes in this package.
-* TestViewIT.java: Integration tests for the component. Uses TestView.java.
-* assembly/: this folder includes configuration for packaging the project into a JAR so that it works well with other Vaadin projects and the Vaadin Directory. There is usually no need to modify these files, unless you need to add JAR manifest entries.
+No explicit configuration is needed in the consuming app.
 
-### Deployment
+## Usage
 
-- Starting the test/demo server to http://localhost:8080:
+### With `vaadin-flow-app-nav-layout` (recommended)
+
+Override `createHeadroomComponent()` in the `AppNavLayout` subclass:
+
+```java
+@Override
+protected Component createHeadroomComponent() {
+    return AppHeadroom.create();
+}
+```
+
+`AppNavLayout` calls this during nav setup and appends the returned component to itself.
+
+### Standalone
+
+```java
+AppHeadroom.applyTo(myAppLayout);
+```
+
+`applyTo` creates an `AppHeadroom`, appends it to the layout, and returns the instance for chaining.
+
+## Configuration
+
+All setters return `this` for chaining. Call them before or after attaching — they map to HTML attributes read by the web component.
+
+| Method | Default | Effect |
+|--------|---------|--------|
+| `setTopOffset(int px)` | 100 | Distance from page top within which chrome is always shown |
+| `setHideTolerance(int px)` | 30 | Scroll-down distance required to trigger hide |
+| `setShowTolerance(int px)` | 30 | Scroll-up distance required to trigger restore |
+
+```java
+AppHeadroom.create()
+    .setTopOffset(64)
+    .setHideTolerance(10)
+    .setShowTolerance(10);
+```
+
+## Development
+
+### Running the demo
+
 ```
 mvn jetty:run
 ```
 
-### Integration test
+Starts the test/demo server at http://localhost:8080.
 
-To run Integration Tests, execute `mvn verify -Pit`.
+### Integration tests
+
+```
+mvn verify -Pit
+```
 
 ## Publishing to Vaadin Directory
 
 You should change the `organisation.name` property in `pom.xml` to your own name/organization.
 
-```
-    <organization>
-        <name>###author###</name>
-    </organization>
+```xml
+<organization>
+    <name>###author###</name>
+</organization>
 ```
 
 You can create the zip package needed for [Vaadin Directory](https://vaadin.com/directory/) using
 
 ```
-mvn versions:set -DnewVersion=1.0.0 # You cannot publish snapshot versions 
+mvn versions:set -DnewVersion=1.0.0 # You cannot publish snapshot versions
 mvn package -Pdirectory
 ```
 
