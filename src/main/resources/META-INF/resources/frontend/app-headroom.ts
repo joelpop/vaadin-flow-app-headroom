@@ -160,8 +160,21 @@ export class AppHeadroom extends LitElement {
     // Minimum upward scroll from the last hide-point before chrome re-appears.
     @property({ attribute: 'show-tolerance', type: Number }) showTolerance = 30;
 
+    // Server-visible pinned/unpinned state (see AppHeadroom.isPinned() / addPinnedChangeListener).
+    // attribute: false — Flow's @Synchronize reads the client JS property via the
+    // property-sync RPC, not a DOM attribute; this is only ever set programmatically.
+    @property({ type: Boolean, attribute: false }) pinned = true;
+
     private _target: HTMLElement | null = null;
     private _cleanup: (() => void) | null = null;
+
+    // Updates `pinned` and notifies the server, but only on an actual state change —
+    // avoids firing on every scroll-driven rAF tick.
+    private _setPinned(value: boolean) {
+        if (this.pinned === value) return;
+        this.pinned = value;
+        this.dispatchEvent(new CustomEvent('pinned-changed', { detail: { pinned: value } }));
+    }
 
     // connectedCallback — browser lifecycle hook equivalent to Vaadin's onAttach().
     // Called when this element is inserted into the DOM.
@@ -169,7 +182,22 @@ export class AppHeadroom extends LitElement {
         super.connectedCallback();
 
         const target = this.closest('vaadin-app-layout') as HTMLElement | null;
-        if (!target || target.hasAttribute('headroom-enabled')) return;  // guard: attach once
+        if (!target) {
+            console.warn(
+                '<app-headroom>: no <vaadin-app-layout> ancestor found. Place ' +
+                '<app-headroom> as a child of a <vaadin-app-layout> (or use ' +
+                'AppHeadroom.applyTo(appLayout) from Java) for scroll-hide behavior to work.'
+            );
+            return;
+        }
+        if (target.hasAttribute('headroom-enabled')) {
+            console.warn(
+                '<app-headroom>: this <vaadin-app-layout> already has headroom behavior ' +
+                'attached from another <app-headroom> instance; ignoring this duplicate. ' +
+                'Only one <app-headroom> per AppLayout is supported.'
+            );
+            return;
+        }
 
         // vaadin-app-layout reads --vaadin-app-layout-drawer-overlay in its own
         // connectedCallback(), which fires before this child element connects.
@@ -225,6 +253,7 @@ export class AppHeadroom extends LitElement {
                             target.style.paddingTop = '';
                             target.style.paddingBottom = '';
                             pinY = y;
+                            this._setPinned(true);
                         }
                     } else if (pinned) {
                         if ((y - pinY) > HIDE_TOLERANCE) {
@@ -236,6 +265,7 @@ export class AppHeadroom extends LitElement {
                                 target.style.paddingBottom = '0'; // mobile: collapse bottom bar space
                             }
                             unpinY = y;
+                            this._setPinned(false);
                         } else if (y < pinY) {
                             pinY = y;
                         }
@@ -246,6 +276,7 @@ export class AppHeadroom extends LitElement {
                             target.style.paddingTop = '';
                             target.style.paddingBottom = '';
                             pinY = y;
+                            this._setPinned(true);
                         } else if (y > unpinY) {
                             // Cap unpinY below the true bottom so rubber-band deceleration
                             // (which can bounce SHOW_TOLERANCE+ px) isn't mistaken for
@@ -283,6 +314,7 @@ export class AppHeadroom extends LitElement {
             this._target.style.paddingBottom = '';
             this._target = null;
         }
+        this._setPinned(true);
     }
 
     /** No visual output — this element is purely behavioural. */
