@@ -15,6 +15,12 @@
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- Override on the command line: mvn verify -Pit -Dplaywright.headed=true -->
+        <playwright.headed>false</playwright.headed>
+        <!-- How long (ms) to pause after each settled transition when running headed,
+             so a human watching has time to see it. Ignored unless playwright.headed=true.
+             Override: mvn verify -Pit -Dplaywright.headed=true -Dplaywright.pause=3000 -->
+        <playwright.pause>1500</playwright.pause>
     </properties>
 
     <organization>
@@ -70,10 +76,10 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-testbench-junit6</artifactId>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.61.0</version>
             <scope>test</scope>
-            <optional>true</optional>
         </dependency>
 
         <dependency>
@@ -108,6 +114,13 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
+                </plugin>
+                <!-- Default (unpinned) resolves to an ancient Surefire that predates
+                     JUnit 5 support; pin to the same version Failsafe already resolves to. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.6.0-M1</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -292,6 +305,10 @@
                         <configuration>
                             <trimStackTrace>false</trimStackTrace>
                             <enableAssertions>true</enableAssertions>
+                            <systemPropertyVariables>
+                                <playwright.headed>${playwright.headed}</playwright.headed>
+                                <playwright.pause>${playwright.pause}</playwright.pause>
+                            </systemPropertyVariables>
                         </configuration>
                     </plugin>
                     <plugin>

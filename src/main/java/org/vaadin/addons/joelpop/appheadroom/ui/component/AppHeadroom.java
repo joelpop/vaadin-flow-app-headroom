@@ -3,6 +3,8 @@ package org.vaadin.addons.joelpop.appheadroom.ui.component;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentEvent;
 import com.vaadin.flow.component.ComponentEventListener;
+import com.vaadin.flow.component.ComponentUtil;
+import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.DomEvent;
 import com.vaadin.flow.component.EventData;
 import com.vaadin.flow.component.Synchronize;
@@ -76,5 +78,19 @@ public class AppHeadroom extends Component {
 
     public Registration addPinnedChangeListener(ComponentEventListener<PinnedChangeEvent> listener) {
         return addListener(PinnedChangeEvent.class, listener);
+    }
+
+    /**
+     * Resets the server-visible pinned state directly, rather than relying on the
+     * client's own {@code pinned-changed} event during teardown: when detachment is
+     * server-initiated (e.g. {@code layout.remove(headroom)}), Flow stops routing
+     * further client events for this component the moment removal begins, so the
+     * client-fired event from {@code disconnectedCallback()} never reaches here.
+     */
+    @Override
+    protected void onDetach(DetachEvent detachEvent) {
+        super.onDetach(detachEvent);
+        getElement().setProperty("pinned", true);
+        ComponentUtil.fireEvent(this, new PinnedChangeEvent(this, false, true));
     }
 }
