@@ -3,12 +3,33 @@
  *
  * Hides the top/bottom navigation bars when the user scrolls down and reveals
  * them when scrolling up ("Headroom.js" pattern). Also injects global CSS for
- * the mobile layout: body-scrolling on touch devices, safe-area padding, fixed
- * landscape bottom bar, and nav-item active-state colours.
+ * the mobile layout: body-scrolling on touch devices, safe-area padding, and
+ * fixed landscape bottom bar.
  *
  * The CSS must live here (not in a Java @StyleSheet) because some rules target
  * vaadin-app-layout's internal shadow DOM via ::part() — a CSS selector that
  * can cross shadow-DOM boundaries from outside the component.
+ *
+ * This file intentionally has zero knowledge of any AppLayout-extending add-on
+ * (e.g. one that adds a persistent side rail). It only ever knows about
+ * AppLayout's own standard, public contract: the navbar-top/navbar-bottom
+ * shadow-DOM parts every vaadin-app-layout instance exposes, regardless of
+ * subclass. Two independent, additive mechanisms let a bar avoid being hidden:
+ *
+ *  1. topBarPinned / bottomBarPinned (see AppHeadroom.java's setTopBarPinned/
+ *     setBottomBarPinned) — an explicit override, set via a plain Java method
+ *     call on the AppHeadroom instance itself. No AppLayout extension ever
+ *     calls this directly or needs to know it exists; it's meant to be wired
+ *     up from application code that already explicitly combines a specific
+ *     AppLayout extension with AppHeadroom.
+ *  2. looksLikeAPinnedRail() — an automatic fallback for the common case where
+ *     no explicit override is set: a bar that's already pinned to the viewport
+ *     (position: fixed) *and* shaped like a vertical rail rather than a
+ *     horizontal bar (taller than wide) is left alone too. This is a plain,
+ *     observable geometry fact, not a name any extension has to agree on — but
+ *     being inferred rather than declared, it can occasionally be wrong (e.g. a
+ *     bar in an unusually narrow embedded viewport might look rail-shaped by
+ *     coincidence), which is exactly what (1) exists to override.
  */
 
 import { LitElement, css, nothing } from 'lit';
@@ -50,13 +71,17 @@ GLOBAL_STYLES.replaceSync(`
         will-change: transform;
     }
 
-    /* translateY(-100%) slides the top bar upward by its own height (off-screen). */
-    vaadin-app-layout[headroom-enabled][headroom-unpinned]::part(navbar-top) {
+    /* translateY(-100%) slides the top bar upward by its own height (off-screen).
+       Gated on headroom-hide-top rather than headroom-unpinned directly: our own
+       JS only sets this marker when navbar-top isn't a pinned rail (see
+       looksLikeAPinnedRail() in connectedCallback). */
+    vaadin-app-layout[headroom-hide-top]::part(navbar-top) {
         transform: translateY(-100%);
     }
 
-    /* translateY(100%) slides the bottom bar downward by its own height. */
-    vaadin-app-layout[headroom-enabled][headroom-unpinned]::part(navbar-bottom) {
+    /* translateY(100%) slides the bottom bar downward by its own height. Same
+       pinned-rail deferral as navbar-top above. */
+    vaadin-app-layout[headroom-hide-bottom]::part(navbar-bottom) {
         transform: translateY(100%);
     }
 
@@ -81,20 +106,11 @@ GLOBAL_STYLES.replaceSync(`
         }
     }
 
-    /* Active state for bottom nav items */
-    .touch-nav-item.active {
-        color: var(--lumo-primary-color);
-    }
-
-    /* Overflow popover buttons: secondary by default, primary when active.
-       ::part(label/prefix) reaches into vaadin-button's shadow DOM. */
-    vaadin-button.overflow-nav-item:not(.active)::part(label),
-    vaadin-button.overflow-nav-item:not(.active)::part(prefix) {
-        color: var(--lumo-secondary-text-color);
-    }
-
     /* Landscape on touch: pin bottom bar to viewport bottom.
-       will-change: auto clears the stacking context that confines position: fixed. */
+       will-change: auto clears the stacking context that confines position: fixed.
+       Note: this makes navbar-bottom position:fixed for our own layout reasons,
+       unrelated to any pinned-rail concept — it stays full-width/short (a bar,
+       not a rail), so looksLikeAPinnedRail() below still correctly hides it. */
     @media (orientation: landscape) and (pointer: coarse) {
         vaadin-app-layout::part(navbar-bottom) {
             position: fixed !important;
@@ -107,43 +123,21 @@ GLOBAL_STYLES.replaceSync(`
             will-change: auto;
         }
     }
-
-    /* Force overlay drawer mode on rail devices (portrait tablet exceeds the 800px media query). */
-    vaadin-app-layout[nav-rail] {
-        --vaadin-app-layout-drawer-overlay: true;
-    }
-
-    /* Rail: pin navbar-bottom slot to the left edge, below the top bar. */
-    vaadin-app-layout[nav-rail]::part(navbar-bottom) {
-        position: fixed !important;
-        inset-block-start: var(--vaadin-app-layout-navbar-offset-top, 3.5rem);
-        inset-block-end: 0;
-        inset-inline-start: 0;
-        width: var(--nav-rail-width, 5rem);
-        z-index: 200;
-        will-change: auto;
-        padding-block-start: var(--lumo-space-s);
-        padding-block-end: 0;
-        background: var(--lumo-contrast-5pct);
-        border-inline-end: 1px solid var(--lumo-contrast-10pct);
-    }
-
-    /* Drawer slides over the rail when opened. */
-    vaadin-app-layout[nav-rail]::part(drawer) {
-        z-index: 201;
-    }
-
-    /* Rail items: centered, with vertical padding for comfortable tap targets. */
-    vaadin-app-layout[nav-rail] .touch-nav-item {
-        padding-block: var(--lumo-space-s);
-    }
-
-    /* Prevent headroom from sliding the rail off-screen on scroll. */
-    vaadin-app-layout[nav-rail][headroom-unpinned]::part(navbar-bottom) {
-        transform: none;
-    }
 `);
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, GLOBAL_STYLES];
+
+// A bar that's already pinned to the viewport (position: fixed) AND shaped like a
+// vertical rail (taller than wide) is being used as a persistent side rail by
+// *some* other layout mechanism — headroom's translateY slide gesture only makes
+// sense for a horizontal top/bottom bar, so it's skipped for anything shaped and
+// positioned like this. This needs no cooperation from whatever made it a rail:
+// it's a plain, observable geometric fact, not a name either side has to agree on.
+function looksLikeAPinnedRail(el: HTMLElement | null): boolean {
+    if (!el) return false;
+    if (getComputedStyle(el).position !== 'fixed') return false;
+    const rect = el.getBoundingClientRect();
+    return rect.height > rect.width;
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -159,6 +153,11 @@ export class AppHeadroom extends LitElement {
     @property({ attribute: 'hide-tolerance', type: Number }) hideTolerance = 30;
     // Minimum upward scroll from the last hide-point before chrome re-appears.
     @property({ attribute: 'show-tolerance', type: Number }) showTolerance = 30;
+
+    // Explicit per-bar overrides (see AppHeadroom.java's setTopBarPinned/
+    // setBottomBarPinned) — take precedence over looksLikeAPinnedRail() below.
+    @property({ attribute: 'top-bar-pinned',    type: Boolean }) topBarPinned    = false;
+    @property({ attribute: 'bottom-bar-pinned', type: Boolean }) bottomBarPinned = false;
 
     // Server-visible pinned/unpinned state (see AppHeadroom.isPinned() / addPinnedChangeListener).
     // attribute: false — Flow's @Synchronize reads the client JS property via the
@@ -199,13 +198,6 @@ export class AppHeadroom extends LitElement {
             return;
         }
 
-        // vaadin-app-layout reads --vaadin-app-layout-drawer-overlay in its own
-        // connectedCallback(), which fires before this child element connects.
-        // A synthetic resize re-runs _updateOverlayMode() now that GLOBAL_STYLES is live.
-        if (target.hasAttribute('nav-rail')) {
-            requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-        }
-
         this._target = target;
         target.setAttribute('headroom-enabled', '');  // activates CSS transitions above
 
@@ -221,6 +213,12 @@ export class AppHeadroom extends LitElement {
 
             // [content] is the inner scroll container inside vaadin-app-layout's shadow DOM.
             const contentEl = target.shadowRoot?.querySelector('[content]') as HTMLElement | null;
+            // The bar elements themselves, cached once — same DOM nodes for the component's
+            // lifetime, though their computed position/shape can change dynamically (e.g. a
+            // companion layout switching a nav bar in/out of rail mode on viewport resize),
+            // which is why looksLikeAPinnedRail() re-checks live style at each transition.
+            const topEl    = target.shadowRoot?.querySelector('[part~="navbar-top"]') as HTMLElement | null;
+            const bottomEl = target.shadowRoot?.querySelector('[part~="navbar-bottom"]') as HTMLElement | null;
 
             // Combine both scroll sources: window.scrollY (mobile page-scroll) and
             // contentEl.scrollTop (desktop content-scroll). Only one is non-zero at a time.
@@ -250,6 +248,8 @@ export class AppHeadroom extends LitElement {
                         // Always show near the top of the page.
                         if (!pinned) {
                             target.removeAttribute('headroom-unpinned');
+                            target.removeAttribute('headroom-hide-top');
+                            target.removeAttribute('headroom-hide-bottom');
                             target.style.paddingTop = '';
                             target.style.paddingBottom = '';
                             pinY = y;
@@ -259,6 +259,12 @@ export class AppHeadroom extends LitElement {
                         if ((y - pinY) > HIDE_TOLERANCE) {
                             // Scrolled down far enough from most recent upward position → hide.
                             target.setAttribute('headroom-unpinned', '');
+                            if (!this.topBarPinned && !looksLikeAPinnedRail(topEl)) {
+                                target.setAttribute('headroom-hide-top', '');
+                            }
+                            if (!this.bottomBarPinned && !looksLikeAPinnedRail(bottomEl)) {
+                                target.setAttribute('headroom-hide-bottom', '');
+                            }
                             if (contentEl && contentEl.scrollTop > 0) {
                                 target.style.paddingTop = '0';    // desktop: fill the top gap
                             } else {
@@ -273,6 +279,8 @@ export class AppHeadroom extends LitElement {
                         if ((unpinY - y) > SHOW_TOLERANCE) {
                             // Scrolled up enough from most recent downward position → show.
                             target.removeAttribute('headroom-unpinned');
+                            target.removeAttribute('headroom-hide-top');
+                            target.removeAttribute('headroom-hide-bottom');
                             target.style.paddingTop = '';
                             target.style.paddingBottom = '';
                             pinY = y;
@@ -310,6 +318,8 @@ export class AppHeadroom extends LitElement {
         if (this._target) {
             this._target.removeAttribute('headroom-enabled');
             this._target.removeAttribute('headroom-unpinned');
+            this._target.removeAttribute('headroom-hide-top');
+            this._target.removeAttribute('headroom-hide-bottom');
             this._target.style.paddingTop = '';
             this._target.style.paddingBottom = '';
             this._target = null;

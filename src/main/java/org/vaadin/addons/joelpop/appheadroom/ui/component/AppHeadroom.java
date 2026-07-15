@@ -13,6 +13,26 @@ import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.shared.Registration;
 
+/**
+ * Hides/shows an {@link AppLayout}'s top and bottom navigation bars on scroll.
+ *
+ * <p>This component only ever knows about {@link AppLayout}'s own standard,
+ * public contract — specifically the {@code navbar-top} and {@code navbar-bottom}
+ * shadow-DOM parts every {@code vaadin-app-layout} instance exposes, regardless
+ * of subclass. It has no knowledge of, and no dependency on, any specific
+ * {@code AppLayout} extension (e.g. one that adds a persistent side rail):
+ * whatever a subclass does with those two standard parts, {@code AppHeadroom}
+ * finds and manages them the same way every time.
+ *
+ * <p>By default, a bar that's already pinned to the viewport
+ * ({@code position: fixed}) and shaped like a vertical rail rather than a
+ * horizontal bar (taller than wide) is left alone automatically — a plain,
+ * observable geometry fact, not something any extension has to declare. For
+ * cases where that inference isn't right (or an extension's own behavior can't
+ * be reliably inferred that way), {@link #setTopBarPinned} / {@link
+ * #setBottomBarPinned} let calling code state it explicitly instead. See those
+ * methods for how this is meant to be wired up from application code.
+ */
 @Tag("app-headroom")
 @JsModule("./app-headroom.ts")
 public class AppHeadroom extends Component {
@@ -42,17 +62,49 @@ public class AppHeadroom extends Component {
     }
 
     public AppHeadroom setTopOffset(int px) {
+        requireNonNegative(px, "topOffset");
         getElement().setAttribute("top-offset", String.valueOf(px));
         return this;
     }
 
     public AppHeadroom setHideTolerance(int px) {
+        requireNonNegative(px, "hideTolerance");
         getElement().setAttribute("hide-tolerance", String.valueOf(px));
         return this;
     }
 
     public AppHeadroom setShowTolerance(int px) {
+        requireNonNegative(px, "showTolerance");
         getElement().setAttribute("show-tolerance", String.valueOf(px));
+        return this;
+    }
+
+    private static void requireNonNegative(int px, String paramName) {
+        if (px < 0) {
+            throw new IllegalArgumentException(paramName + " must not be negative, was " + px);
+        }
+    }
+
+    /**
+     * Explicitly overrides whether the top bar is treated as pinned (never
+     * hidden), regardless of the automatic position/shape inference.
+     *
+     * <p>Not called directly by any {@link AppLayout} extension — extensions
+     * have no reason to know {@code AppHeadroom} exists. Instead, this is meant
+     * to be wired up from application code that already explicitly combines an
+     * {@code AppLayout} extension with {@code AppHeadroom} (for example, code
+     * overriding an extension's own hook for observing layout-mode changes, if
+     * it has one), reacting to whatever that extension's own public API exposes
+     * about its current state and calling this method accordingly.
+     */
+    public AppHeadroom setTopBarPinned(boolean pinned) {
+        getElement().setAttribute("top-bar-pinned", pinned);
+        return this;
+    }
+
+    /** Same as {@link #setTopBarPinned}, for the bottom bar. */
+    public AppHeadroom setBottomBarPinned(boolean pinned) {
+        getElement().setAttribute("bottom-bar-pinned", pinned);
         return this;
     }
 

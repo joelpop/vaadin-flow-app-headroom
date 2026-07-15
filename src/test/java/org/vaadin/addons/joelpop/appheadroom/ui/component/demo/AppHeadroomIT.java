@@ -193,6 +193,28 @@ class AppHeadroomIT {
     }
 
     @Test
+    void explicitlyPinnedBottomBar_isNeverTransformHidden() {
+        page.navigate(BASE_URL + "/headroom-demo-explicit-pin");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator layout = page.locator("vaadin-app-layout");
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator bottomPart = page.locator("vaadin-app-layout div[part~='navbar-bottom']");
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        // Overall scroll state still tracks correctly...
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+        // ...but the explicitly-pinned bar is never transform-hidden, even though
+        // it's an ordinary bar (not fixed, not rail-shaped) that looksLikeAPinnedRail()
+        // alone would NOT have exempted.
+        String transform = (String) bottomPart.evaluate("el => getComputedStyle(el).transform");
+        assertTrue(transform.equals("none"),
+                "explicitly-pinned navbar-bottom should NOT be transformed/hidden, was: " + transform);
+    }
+
+    @Test
     void withinTopOffset_neverUnpins() {
         page.navigate(BASE_URL + "/headroom-demo");
         page.waitForLoadState(LoadState.NETWORKIDLE); // let the deferred rAF scroll-listener setup settle first
@@ -233,5 +255,49 @@ class AppHeadroomIT {
      *  wheel/touch input, exercising the app's own scroll listener unmodified. */
     private void scrollTo(Locator contentEl, int y) {
         contentEl.evaluate("(el, y) => { el.scrollTop = y; }", y);
+    }
+
+    @Test
+    void pinnedRailShapedBottomBar_isNeverTransformHidden() {
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        // navbar-bottom has a `hidden` attribute by default (confirmed against the
+        // real @vaadin/app-layout template) unless the touch-optimized navbar slot
+        // has content; this demo doesn't populate it, so force it visible here -
+        // otherwise it's a zero-size, non-rendered element and any check against
+        // it would be meaningless regardless of the actual heuristic.
+        page.evaluate(
+            "() => { const el = document.querySelector('vaadin-app-layout')" +
+            "  .shadowRoot.querySelector('#navbarBottom'); " +
+            "  el.removeAttribute('hidden'); el.textContent = 'Simulated rail'; }"
+        );
+
+        // Simulate a companion "rail" purely via CSS, with zero reference to any
+        // specific add-on - same shape/position AppNavLayout's rail actually uses
+        // (fixed, ~80px wide, spanning most of the viewport height).
+        page.addStyleTag(new Page.AddStyleTagOptions().setContent(
+            "vaadin-app-layout::part(navbar-bottom) {" +
+            "  position: fixed !important;" +
+            "  top: 0; bottom: 0; left: 0;" +
+            "  width: 80px;" +
+            "  height: auto;" +
+            "}"
+        ));
+
+        Locator layout = page.locator("vaadin-app-layout");
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator bottomPart = page.locator("vaadin-app-layout div[part~='navbar-bottom']");
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        // Overall scroll state still tracks correctly...
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+        // ...but the rail-shaped bar itself is never transform-hidden, since
+        // looksLikeAPinnedRail() defers to it being fixed + taller than wide.
+        String transform = (String) bottomPart.evaluate("el => getComputedStyle(el).transform");
+        assertTrue(transform.equals("none"),
+                "pinned rail-shaped navbar-bottom should NOT be transformed/hidden, was: " + transform);
     }
 }

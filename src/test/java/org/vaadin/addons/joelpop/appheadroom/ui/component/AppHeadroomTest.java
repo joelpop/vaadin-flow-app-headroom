@@ -86,6 +86,57 @@ class AppHeadroomTest {
     }
 
     @Test
+    void setTopOffset_throwsIllegalArgumentException_whenNegative() {
+        var headroom = AppHeadroom.create();
+        var ex = assertThrows(IllegalArgumentException.class, () -> headroom.setTopOffset(-1));
+        assertTrue(ex.getMessage().contains("topOffset"));
+    }
+
+    @Test
+    void setHideTolerance_throwsIllegalArgumentException_whenNegative() {
+        var headroom = AppHeadroom.create();
+        var ex = assertThrows(IllegalArgumentException.class, () -> headroom.setHideTolerance(-1));
+        assertTrue(ex.getMessage().contains("hideTolerance"));
+    }
+
+    @Test
+    void setShowTolerance_throwsIllegalArgumentException_whenNegative() {
+        var headroom = AppHeadroom.create();
+        var ex = assertThrows(IllegalArgumentException.class, () -> headroom.setShowTolerance(-1));
+        assertTrue(ex.getMessage().contains("showTolerance"));
+    }
+
+    @Test
+    void toleranceSetters_acceptZero_asBoundaryValue() {
+        var headroom = AppHeadroom.create()
+                .setTopOffset(0).setHideTolerance(0).setShowTolerance(0);
+
+        assertEquals("0", headroom.getElement().getAttribute("top-offset"));
+        assertEquals("0", headroom.getElement().getAttribute("hide-tolerance"));
+        assertEquals("0", headroom.getElement().getAttribute("show-tolerance"));
+    }
+
+    @Test
+    void setTopBarPinned_setsBooleanAttribute_andReturnsThisForChaining() {
+        var headroom = AppHeadroom.create();
+        assertSame(headroom, headroom.setTopBarPinned(true));
+        assertTrue(headroom.getElement().hasAttribute("top-bar-pinned"));
+
+        headroom.setTopBarPinned(false);
+        assertFalse(headroom.getElement().hasAttribute("top-bar-pinned"));
+    }
+
+    @Test
+    void setBottomBarPinned_setsBooleanAttribute_andReturnsThisForChaining() {
+        var headroom = AppHeadroom.create();
+        assertSame(headroom, headroom.setBottomBarPinned(true));
+        assertTrue(headroom.getElement().hasAttribute("bottom-bar-pinned"));
+
+        headroom.setBottomBarPinned(false);
+        assertFalse(headroom.getElement().hasAttribute("bottom-bar-pinned"));
+    }
+
+    @Test
     void settersChainTogether_andAllApply() {
         var headroom = AppHeadroom.create()
                 .setTopOffset(10).setHideTolerance(20).setShowTolerance(30);

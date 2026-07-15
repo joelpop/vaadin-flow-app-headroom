@@ -95,14 +95,6 @@ mvn verify -Pit
 
 ## Publishing to Vaadin Directory
 
-You should change the `organisation.name` property in `pom.xml` to your own name/organization.
-
-```xml
-<organization>
-    <name>###author###</name>
-</organization>
-```
-
 You can create the zip package needed for [Vaadin Directory](https://vaadin.com/directory/) using
 
 ```
