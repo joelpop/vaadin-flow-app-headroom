@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AppHeadroomIT {
@@ -249,6 +250,44 @@ class AppHeadroomIT {
 
         assertTrue(messages.stream().anyMatch(m -> m.contains("already has headroom behavior attached")),
                 "expected duplicate-attach console.warn; got: " + messages);
+    }
+
+    @Test
+    void reEvaluatingGlobalStylesModule_doesNotDuplicateStylesheet() {
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        // First, confirm the *real* shipped module actually sets this exact marker
+        // on real evaluation — ties this test to app-headroom.ts's actual behavior,
+        // not just to a same-named constant duplicated in this test's own JS below.
+        Object markerSetByRealModule = page.evaluate("() => document.__appHeadroomGlobalStylesInstalled === true");
+        assertEquals(true, markerSetByRealModule,
+                "expected app-headroom.ts's real module evaluation to set "
+                + "document.__appHeadroomGlobalStylesInstalled = true; it did not");
+
+        Object countBefore = page.evaluate("() => document.adoptedStyleSheets.length");
+
+        // Reproduces the exact guard app-headroom.ts uses (same marker property
+        // name on `document`), simulating what a second evaluation of that
+        // module's top-level code would do (Vite HMR, or a second bundle).
+        page.evaluate(
+            "() => { " +
+            "  const marker = '__appHeadroomGlobalStylesInstalled'; " +
+            "  if (!document[marker]) { " +
+            "    const sheet = new CSSStyleSheet(); " +
+            "    sheet.replaceSync('/* simulated re-evaluation */'); " +
+            "    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]; " +
+            "    document[marker] = true; " +
+            "  } " +
+            "}"
+        );
+
+        Object countAfter = page.evaluate("() => document.adoptedStyleSheets.length");
+
+        assertEquals(countBefore, countAfter,
+                "expected document.adoptedStyleSheets count to stay the same when the guarded "
+                + "install logic runs a second time, but it changed from " + countBefore
+                + " to " + countAfter);
     }
 
     @Test

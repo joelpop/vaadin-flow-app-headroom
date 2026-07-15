@@ -56,6 +56,16 @@ import { customElement, property } from 'lit/decorators.js';
 // AppHeadroom instances are created.
 // Adopted at module-evaluation time (not lazily in connectedCallback) so the CSS
 // custom properties are live before vaadin-app-layout's own connectedCallback fires.
+//
+// Guarded by a marker on `document` itself (not a module-level flag) against
+// this module's top-level code running more than once — Vite HMR re-executing
+// it, or two independent bundles on the same page both including it — which
+// would otherwise append a duplicate copy of this stylesheet each time. A
+// module-level flag wouldn't help: each re-evaluation gets its own fresh module
+// scope, same as GLOBAL_STYLES itself would. `document` is the one thing that
+// actually persists across re-evaluations.
+const GLOBAL_STYLES_INSTALLED_MARKER = '__appHeadroomGlobalStylesInstalled';
+if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MARKER]) {
 const GLOBAL_STYLES = new CSSStyleSheet();
 GLOBAL_STYLES.replaceSync(`
     /* Body-scrolling mode: touch devices only, and only on a page that actually
@@ -135,6 +145,8 @@ GLOBAL_STYLES.replaceSync(`
     }
 `);
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, GLOBAL_STYLES];
+(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MARKER] = true;
+}
 
 // A bar that's already pinned to the viewport (position: fixed) AND shaped like a
 // vertical rail (taller than wide) is being used as a persistent side rail by
