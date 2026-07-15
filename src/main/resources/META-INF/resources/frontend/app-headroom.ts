@@ -10,6 +10,13 @@
  * vaadin-app-layout's internal shadow DOM via ::part() — a CSS selector that
  * can cross shadow-DOM boundaries from outside the component.
  *
+ * Every rule below is scoped to the [headroom-enabled] attribute (only set once
+ * an AppHeadroom instance actually attaches to a given vaadin-app-layout) —
+ * importing this module has zero visual effect on any AppLayout that doesn't
+ * use AppHeadroom. The one rule that targets <html> rather than
+ * vaadin-app-layout uses :has(vaadin-app-layout[headroom-enabled]) instead,
+ * since the attribute itself lives on a descendant, not on <html>.
+ *
  * This file intentionally has zero knowledge of any AppLayout-extending add-on
  * (e.g. one that adds a persistent side rail). It only ever knows about
  * AppLayout's own standard, public contract: the navbar-top/navbar-bottom
@@ -51,12 +58,15 @@ import { customElement, property } from 'lit/decorators.js';
 // custom properties are live before vaadin-app-layout's own connectedCallback fires.
 const GLOBAL_STYLES = new CSSStyleSheet();
 GLOBAL_STYLES.replaceSync(`
-    /* Body-scrolling mode: touch devices only. Content padding lives inside the
-       scroll container so scrolled content naturally fills the space vacated by
-       the chrome. Desktop keeps the default Vaadin content-scrolling mode.
-       "pointer: coarse" identifies touch (finger) input devices. */
+    /* Body-scrolling mode: touch devices only, and only on a page that actually
+       has headroom attached to its AppLayout — :has() lets us gate a rule on
+       <html> by an attribute that only ever lives on a descendant element.
+       Content padding lives inside the scroll container so scrolled content
+       naturally fills the space vacated by the chrome. Desktop keeps the
+       default Vaadin content-scrolling mode. "pointer: coarse" identifies
+       touch (finger) input devices. */
     @media (pointer: coarse) {
-        html {
+        html:has(vaadin-app-layout[headroom-enabled]) {
             height: auto;
         }
     }
@@ -91,7 +101,7 @@ GLOBAL_STYLES.replaceSync(`
     }
 
     /* Tighten the bottom bar padding so it hugs its content. */
-    vaadin-app-layout::part(navbar-bottom) {
+    vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
         padding-top: var(--lumo-space-xs);
         padding-bottom: var(--lumo-space-xs);
     }
@@ -101,7 +111,7 @@ GLOBAL_STYLES.replaceSync(`
        env(safe-area-inset-bottom) is a CSS variable the browser provides only
        in standalone mode on notch/gesture-bar devices (e.g. iPhone). */
     @media (display-mode: standalone) {
-        vaadin-app-layout::part(navbar-bottom) {
+        vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
             padding-bottom: env(safe-area-inset-bottom, var(--lumo-space-xs));
         }
     }
@@ -112,7 +122,7 @@ GLOBAL_STYLES.replaceSync(`
        unrelated to any pinned-rail concept — it stays full-width/short (a bar,
        not a rail), so looksLikeAPinnedRail() below still correctly hides it. */
     @media (orientation: landscape) and (pointer: coarse) {
-        vaadin-app-layout::part(navbar-bottom) {
+        vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
             position: fixed !important;
             inset-block-end: 0;
             inset-inline-start: 0;

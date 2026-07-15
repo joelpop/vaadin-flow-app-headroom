@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
@@ -248,6 +249,66 @@ class AppHeadroomIT {
 
         assertTrue(messages.stream().anyMatch(m -> m.contains("already has headroom behavior attached")),
                 "expected duplicate-attach console.warn; got: " + messages);
+    }
+
+    @Test
+    void unattachedAppLayout_navbarBottomPaddingNotTightened() {
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        String attachedPadding = (String) page.locator("vaadin-app-layout div[part~='navbar-bottom']")
+                .evaluate("el => getComputedStyle(el).paddingTop");
+
+        page.navigate(BASE_URL + "/headroom-demo-ungated-css");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        String unattachedPadding = (String) page.locator("vaadin-app-layout div[part~='navbar-bottom']")
+                .evaluate("el => getComputedStyle(el).paddingTop");
+
+        assertTrue(!attachedPadding.equals(unattachedPadding),
+                "expected navbar-bottom padding to differ between an AppLayout with headroom "
+                + "attached (" + attachedPadding + ") and one without (" + unattachedPadding
+                + ") — the [headroom-enabled] gate on the padding-tightening rule isn't working");
+    }
+
+    @Test
+    void injectedCssMediaRules_areGatedOnHeadroomEnabled() {
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> rules = (List<Map<String, String>>) page.evaluate(
+            "() => { const out = []; " +
+            "for (const sheet of document.adoptedStyleSheets) { " +
+            "  for (const rule of sheet.cssRules) { " +
+            "    if (rule instanceof CSSMediaRule) { " +
+            "      for (const inner of rule.cssRules) { " +
+            "        out.push({ media: rule.media.mediaText, selector: inner.selectorText || '' }); " +
+            "      } " +
+            "    } " +
+            "  } " +
+            "} " +
+            "return out; }"
+        );
+
+        var standalone = rules.stream()
+                .filter(r -> r.get("media").contains("standalone"))
+                .findFirst();
+        assertTrue(standalone.isPresent() && standalone.get().get("selector").contains("headroom-enabled"),
+                "expected the display-mode:standalone navbar-bottom rule to be gated on "
+                + "[headroom-enabled]; found: " + standalone);
+
+        var landscapeTouch = rules.stream()
+                .filter(r -> r.get("media").contains("landscape"))
+                .findFirst();
+        assertTrue(landscapeTouch.isPresent() && landscapeTouch.get().get("selector").contains("headroom-enabled"),
+                "expected the landscape+touch navbar-bottom rule to be gated on "
+                + "[headroom-enabled]; found: " + landscapeTouch);
+
+        var touchOnly = rules.stream()
+                .filter(r -> r.get("media").contains("pointer") && !r.get("media").contains("landscape"))
+                .findFirst();
+        assertTrue(touchOnly.isPresent() && touchOnly.get().get("selector").contains(":has(vaadin-app-layout[headroom-enabled])"),
+                "expected the touch-only html height:auto rule to be gated via "
+                + ":has(vaadin-app-layout[headroom-enabled]); found: " + touchOnly);
     }
 
     /** Sets scrollTop directly on the AppLayout's shadow-DOM content container.
