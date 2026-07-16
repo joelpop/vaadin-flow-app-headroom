@@ -162,6 +162,17 @@ function looksLikeAPinnedRail(el: HTMLElement | null): boolean {
     return rect.height > rect.width;
 }
 
+// Restores an AppLayout to its default (chrome fully shown, no bottom-bar
+// padding override) state — shared by the "near top" / "scrolled back up past
+// show tolerance" scroll transitions and by disconnectedCallback's teardown.
+function resetToShownState(el: HTMLElement): void {
+    el.removeAttribute('headroom-unpinned');
+    el.removeAttribute('headroom-hide-top');
+    el.removeAttribute('headroom-hide-bottom');
+    el.style.paddingTop = '';
+    el.style.paddingBottom = '';
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 @customElement('app-headroom')
@@ -256,7 +267,6 @@ export class AppHeadroom extends LitElement {
                 ? contentEl.scrollHeight - contentEl.clientHeight
                 : document.documentElement.scrollHeight - window.innerHeight;
 
-            let lastY   = getY();
             let pinY    = getY();  // y where chrome was last shown
             let unpinY  = 0;       // y where chrome was last hidden
             let ticking = false;   // rAF debounce: only one frame callback queued at a time
@@ -269,18 +279,14 @@ export class AppHeadroom extends LitElement {
                     const maxY = getMaxY();
 
                     // Ignore bottom overscroll/bounce (iOS rubber-band effect).
-                    if (y > maxY) { lastY = y; ticking = false; return; }
+                    if (y > maxY) { ticking = false; return; }
 
                     const pinned = !target.hasAttribute('headroom-unpinned');
 
                     if (y <= OFFSET) {
                         // Always show near the top of the page.
                         if (!pinned) {
-                            target.removeAttribute('headroom-unpinned');
-                            target.removeAttribute('headroom-hide-top');
-                            target.removeAttribute('headroom-hide-bottom');
-                            target.style.paddingTop = '';
-                            target.style.paddingBottom = '';
+                            resetToShownState(target);
                             pinY = y;
                             this._setPinned(true);
                         }
@@ -307,11 +313,7 @@ export class AppHeadroom extends LitElement {
                     } else {
                         if ((unpinY - y) > SHOW_TOLERANCE) {
                             // Scrolled up enough from most recent downward position → show.
-                            target.removeAttribute('headroom-unpinned');
-                            target.removeAttribute('headroom-hide-top');
-                            target.removeAttribute('headroom-hide-bottom');
-                            target.style.paddingTop = '';
-                            target.style.paddingBottom = '';
+                            resetToShownState(target);
                             pinY = y;
                             this._setPinned(true);
                         } else if (y > unpinY) {
@@ -322,7 +324,6 @@ export class AppHeadroom extends LitElement {
                         }
                     }
 
-                    lastY   = y;
                     ticking = false;
                 });
             };
@@ -345,12 +346,8 @@ export class AppHeadroom extends LitElement {
         super.disconnectedCallback();
         if (this._cleanup) { this._cleanup(); this._cleanup = null; }
         if (this._target) {
+            resetToShownState(this._target);
             this._target.removeAttribute('headroom-enabled');
-            this._target.removeAttribute('headroom-unpinned');
-            this._target.removeAttribute('headroom-hide-top');
-            this._target.removeAttribute('headroom-hide-bottom');
-            this._target.style.paddingTop = '';
-            this._target.style.paddingBottom = '';
             this._target = null;
         }
         this._setPinned(true);
