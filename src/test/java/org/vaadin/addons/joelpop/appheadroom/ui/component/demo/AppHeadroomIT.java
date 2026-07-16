@@ -13,9 +13,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import org.vaadin.addons.joelpop.appheadroom.ui.component.AppHeadroom;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -288,6 +292,33 @@ class AppHeadroomIT {
                 "expected document.adoptedStyleSheets count to stay the same when the guarded "
                 + "install logic runs a second time, but it changed from " + countBefore
                 + " to " + countAfter);
+    }
+
+    @Test
+    void observedAttributes_matchJavaConstants() {
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        @SuppressWarnings("unchecked")
+        List<String> observed = (List<String>) page.evaluate(
+            "() => Array.from(customElements.get('app-headroom').observedAttributes)"
+        );
+
+        // Compares against AppHeadroom.java's own public constants, not a value
+        // hardcoded a third time here — if either side renames an attribute
+        // without updating the other, this fails with a clear message instead
+        // of desyncing silently.
+        Set<String> expected = Set.of(
+                AppHeadroom.ATTR_TOP_OFFSET,
+                AppHeadroom.ATTR_HIDE_TOLERANCE,
+                AppHeadroom.ATTR_SHOW_TOLERANCE,
+                AppHeadroom.ATTR_TOP_BAR_PINNED,
+                AppHeadroom.ATTR_BOTTOM_BAR_PINNED
+        );
+
+        assertEquals(expected, new HashSet<>(observed),
+                "app-headroom's browser-registered observedAttributes should exactly match "
+                + "AppHeadroom.java's public ATTR_* constants; found: " + observed);
     }
 
     @Test

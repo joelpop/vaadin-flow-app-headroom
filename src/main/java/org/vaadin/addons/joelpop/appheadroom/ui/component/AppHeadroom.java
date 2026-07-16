@@ -37,6 +37,21 @@ import com.vaadin.flow.shared.Registration;
 @JsModule("./app-headroom.ts")
 public class AppHeadroom extends Component {
 
+    // Attribute/property/event names shared with app-headroom.ts (the browser-side
+    // half of this component). There's no compiler to enforce agreement across that
+    // Java/TypeScript boundary, so a rename on either side would still desync
+    // silently — but these constants at least remove the *intra-Java* duplication
+    // (`"pinned"`/`"pinned-changed"` previously appeared twice each in this file),
+    // and let AppHeadroomIT's cross-boundary test compare against a single,
+    // authoritative value rather than a value hardcoded a third time in the test.
+    public static final String ATTR_TOP_OFFSET = "top-offset";
+    public static final String ATTR_HIDE_TOLERANCE = "hide-tolerance";
+    public static final String ATTR_SHOW_TOLERANCE = "show-tolerance";
+    public static final String ATTR_TOP_BAR_PINNED = "top-bar-pinned";
+    public static final String ATTR_BOTTOM_BAR_PINNED = "bottom-bar-pinned";
+    public static final String PROPERTY_PINNED = "pinned";
+    public static final String EVENT_PINNED_CHANGED = "pinned-changed";
+
     private AppHeadroom() {}
 
     public static AppHeadroom create() {
@@ -63,19 +78,19 @@ public class AppHeadroom extends Component {
 
     public AppHeadroom setTopOffset(int px) {
         requireNonNegative(px, "topOffset");
-        getElement().setAttribute("top-offset", String.valueOf(px));
+        getElement().setAttribute(ATTR_TOP_OFFSET, String.valueOf(px));
         return this;
     }
 
     public AppHeadroom setHideTolerance(int px) {
         requireNonNegative(px, "hideTolerance");
-        getElement().setAttribute("hide-tolerance", String.valueOf(px));
+        getElement().setAttribute(ATTR_HIDE_TOLERANCE, String.valueOf(px));
         return this;
     }
 
     public AppHeadroom setShowTolerance(int px) {
         requireNonNegative(px, "showTolerance");
-        getElement().setAttribute("show-tolerance", String.valueOf(px));
+        getElement().setAttribute(ATTR_SHOW_TOLERANCE, String.valueOf(px));
         return this;
     }
 
@@ -98,22 +113,22 @@ public class AppHeadroom extends Component {
      * about its current state and calling this method accordingly.
      */
     public AppHeadroom setTopBarPinned(boolean pinned) {
-        getElement().setAttribute("top-bar-pinned", pinned);
+        getElement().setAttribute(ATTR_TOP_BAR_PINNED, pinned);
         return this;
     }
 
     /** Same as {@link #setTopBarPinned}, for the bottom bar. */
     public AppHeadroom setBottomBarPinned(boolean pinned) {
-        getElement().setAttribute("bottom-bar-pinned", pinned);
+        getElement().setAttribute(ATTR_BOTTOM_BAR_PINNED, pinned);
         return this;
     }
 
-    @Synchronize("pinned-changed")
+    @Synchronize(EVENT_PINNED_CHANGED)
     public boolean isPinned() {
-        return getElement().getProperty("pinned", true);
+        return getElement().getProperty(PROPERTY_PINNED, true);
     }
 
-    @DomEvent("pinned-changed")
+    @DomEvent(EVENT_PINNED_CHANGED)
     public static class PinnedChangeEvent extends ComponentEvent<AppHeadroom> {
         private final boolean pinned;
 
@@ -142,7 +157,7 @@ public class AppHeadroom extends Component {
     @Override
     protected void onDetach(DetachEvent detachEvent) {
         super.onDetach(detachEvent);
-        getElement().setProperty("pinned", true);
+        getElement().setProperty(PROPERTY_PINNED, true);
         ComponentUtil.fireEvent(this, new PinnedChangeEvent(this, false, true));
     }
 }
