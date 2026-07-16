@@ -233,15 +233,20 @@ class AppHeadroomIT {
     }
 
     @Test
-    void missingAppLayoutAncestor_logsConsoleWarning() {
-        List<String> messages = new CopyOnWriteArrayList<>();
-        page.onConsoleMessage(msg -> messages.add(msg.text())); // must attach before navigate()
-
-        page.navigate(BASE_URL + "/headroom-demo-no-ancestor");
+    void headroomElement_isPeerOfUiRoot_notLightDomChildOfLayout() {
+        page.navigate(BASE_URL + "/headroom-demo");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
-        assertTrue(messages.stream().anyMatch(m -> m.contains("no <vaadin-app-layout> ancestor found")),
-                "expected ancestor-missing console.warn; got: " + messages);
+        Boolean isChildOfLayout = (Boolean) page.evaluate(
+                "() => Array.from(document.querySelector('vaadin-app-layout').children)" +
+                "  .some(el => el.tagName === 'APP-HEADROOM')");
+        assertEquals(false, isChildOfLayout,
+                "app-headroom must never be a light-DOM child of the vaadin-app-layout it affects");
+
+        Boolean existsElsewhereInDocument = (Boolean) page.evaluate(
+                "() => document.querySelector('app-headroom') !== null");
+        assertTrue(existsElsewhereInDocument,
+                "app-headroom should still be attached somewhere in the document (as a peer)");
     }
 
     @Test

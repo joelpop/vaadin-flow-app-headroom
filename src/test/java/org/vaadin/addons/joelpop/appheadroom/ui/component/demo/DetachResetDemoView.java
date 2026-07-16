@@ -38,6 +38,6 @@ public class DetachResetDemoView extends AppLayout {
         headroom.addPinnedChangeListener(event ->
                 pinnedState.setText(event.isPinned() ? "pinned" : "unpinned"));
 
-        removeButton.addClickListener(event -> remove(headroom));
+        removeButton.addClickListener(event -> headroom.remove());
     }
 }

@@ -40,6 +40,7 @@
  */
 
 import { LitElement, css, nothing } from 'lit';
+import type { PropertyValues } from 'lit';
 
 // Decorators (TypeScript annotations applied at class/field definition time):
 // @customElement — registers this class as the <app-headroom> HTML tag.
@@ -186,6 +187,13 @@ export class AppHeadroom extends LitElement {
     // property-sync RPC, not a DOM attribute; this is only ever set programmatically.
     @property({ type: Boolean, attribute: false }) pinned = true;
 
+    // The vaadin-app-layout this instance affects, set via executeJs("this.target = $0", ...)
+    // from AppHeadroom.java's applyTo() — not a DOM attribute (it's a live element reference,
+    // not a serializable value), and deliberately not discovered via this.closest(...): this
+    // element is a peer under the UI's root, never a light-DOM child of its target, so DOM
+    // ancestry can't be used to find it.
+    @property({ attribute: false }) target: HTMLElement | null = null;
+
     private _target: HTMLElement | null = null;
     private _cleanup: (() => void) | null = null;
 
@@ -197,20 +205,19 @@ export class AppHeadroom extends LitElement {
         this.dispatchEvent(new CustomEvent('pinned-changed', { detail: { pinned: value } }));
     }
 
-    // connectedCallback — browser lifecycle hook equivalent to Vaadin's onAttach().
-    // Called when this element is inserted into the DOM.
-    override connectedCallback() {
-        super.connectedCallback();
-
-        const target = this.closest('vaadin-app-layout') as HTMLElement | null;
-        if (!target) {
-            console.warn(
-                '<app-headroom>: no <vaadin-app-layout> ancestor found. Place ' +
-                '<app-headroom> as a child of a <vaadin-app-layout> (or use ' +
-                'AppHeadroom.applyTo(appLayout) from Java) for scroll-hide behavior to work.'
-            );
-            return;
+    // updated — Lit lifecycle hook, called after any reactive property changes.
+    // `target` arrives via executeJs("this.target = $0", ...) from AppHeadroom.java's
+    // applyTo(), which runs *after* connectedCallback() already fired — so the actual
+    // setup happens here, reacting to the property, rather than in connectedCallback().
+    // Guarded by `!this._target` since a given instance's target is set exactly once.
+    protected override updated(changedProperties: PropertyValues) {
+        super.updated(changedProperties);
+        if (changedProperties.has('target') && this.target && !this._target) {
+            this._attachToTarget(this.target);
         }
+    }
+
+    private _attachToTarget(target: HTMLElement) {
         if (target.hasAttribute('headroom-enabled')) {
             console.warn(
                 '<app-headroom>: this <vaadin-app-layout> already has headroom behavior ' +

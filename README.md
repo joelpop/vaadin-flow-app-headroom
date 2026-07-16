@@ -7,8 +7,6 @@ A Vaadin Flow component that hides the app header when the user scrolls down and
 - [How it works](#how-it-works)
 - [Requirement](#requirement)
 - [Usage](#usage)
-  - [With vaadin-flow-app-nav-layout (recommended)](#with-vaadin-flow-app-nav-layout-recommended)
-  - [Standalone](#standalone)
 - [Configuration](#configuration)
 - [Development](#development)
   - [Running the demo](#running-the-demo)
@@ -39,26 +37,21 @@ No explicit configuration is needed in the consuming app.
 
 ## Usage
 
-### With `vaadin-flow-app-nav-layout` (recommended)
-
-Override `createHeadroomComponent()` in the `AppNavLayout` subclass:
-
-```java
-@Override
-protected Component createHeadroomComponent() {
-    return AppHeadroom.create();
-}
-```
-
-`AppNavLayout` calls this during nav setup and appends the returned component to itself.
-
-### Standalone
-
 ```java
 AppHeadroom.applyTo(myAppLayout);
 ```
 
-`applyTo` creates an `AppHeadroom`, appends it to the layout, and returns the instance for chaining.
+`applyTo` is the only entry point: it validates that `myAppLayout` is backed by
+the standard `vaadin-app-layout` web component, creates an `AppHeadroom`, and
+returns the instance for chaining. This works the same regardless of whether
+`myAppLayout` is a plain `AppLayout` or a subclass (e.g. `vaadin-flow-app-nav-layout`'s
+`AppNavLayout`) — `AppHeadroom` attaches itself as a peer element alongside the
+layout (never as a light-DOM child of it), so it never shows up in
+`myAppLayout.getChildren()` and needs no cooperation from whatever the layout
+subclass does with its own children.
+
+Call `headroom.remove()` to detach headroom behavior from the layout without
+affecting the layout itself.
 
 ## Configuration
 
@@ -71,7 +64,7 @@ All setters return `this` for chaining. Call them before or after attaching — 
 | `setShowTolerance(int px)` | 30 | Scroll-up distance required to trigger restore |
 
 ```java
-AppHeadroom.create()
+AppHeadroom.applyTo(myAppLayout)
     .setTopOffset(64)
     .setHideTolerance(10)
     .setShowTolerance(10);

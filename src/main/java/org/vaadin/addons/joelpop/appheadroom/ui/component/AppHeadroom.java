@@ -9,8 +9,10 @@ import com.vaadin.flow.component.DomEvent;
 import com.vaadin.flow.component.EventData;
 import com.vaadin.flow.component.Synchronize;
 import com.vaadin.flow.component.Tag;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.dependency.JsModule;
+import com.vaadin.flow.function.SerializableRunnable;
 import com.vaadin.flow.shared.Registration;
 
 /**
@@ -54,13 +56,17 @@ public class AppHeadroom extends Component {
 
     private AppHeadroom() {}
 
-    public static AppHeadroom create() {
-        return new AppHeadroom();
-    }
-
     /**
      * Applies headroom scroll-hide/show behavior to the given AppLayout and
      * returns the component for optional further configuration.
+     *
+     * <p>The returned instance attaches itself as a peer under the current
+     * {@link UI}'s root element, never as a light-DOM child of {@code layout}
+     * — so it never shows up in {@code layout.getChildren()}. This happens
+     * automatically whenever {@code layout} itself is attached (immediately,
+     * if it already is), and follows {@code layout} across any subsequent
+     * detach/re-attach. Call {@link #remove()} to detach headroom behavior
+     * from {@code layout} without affecting the layout itself.
      */
     public static AppHeadroom applyTo(AppLayout layout) {
         var tag = layout.getElement().getTag();
@@ -71,9 +77,31 @@ public class AppHeadroom extends Component {
                     + "means an AppLayout subclass overrode @Tag; headroom behavior "
                     + "targets the vaadin-app-layout web component specifically.");
         }
+
         var h = new AppHeadroom();
-        layout.getElement().appendChild(h.getElement());
+        var layoutElement = layout.getElement();
+
+        SerializableRunnable onTargetAttach = () -> {
+            h.getElement().removeFromParent();
+            var uiRoot = UI.getCurrentOrThrow().getElement();
+            uiRoot.appendChild(h.getElement());
+            h.getElement().executeJs("this.target = $0;", layoutElement);
+        };
+        layoutElement.addAttachListener(e -> onTargetAttach.run());
+        if (layoutElement.getNode().isAttached()) {
+            onTargetAttach.run();
+        }
+        layoutElement.addDetachListener(e -> h.getElement().removeFromParent());
+
         return h;
+    }
+
+    /**
+     * Detaches this instance, removing its scroll-hide/show behavior from the
+     * {@link AppLayout} it was applied to. Has no effect if already detached.
+     */
+    public void remove() {
+        getElement().removeFromParent();
     }
 
     public AppHeadroom setTopOffset(int px) {
