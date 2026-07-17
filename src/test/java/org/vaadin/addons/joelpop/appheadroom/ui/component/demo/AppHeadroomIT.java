@@ -436,4 +436,78 @@ class AppHeadroomIT {
         assertTrue(transform.equals("none"),
                 "pinned rail-shaped navbar-bottom should NOT be transformed/hidden, was: " + transform);
     }
+
+    @Test
+    void activationPredicate_allowsEffect_onEmulatedPhone() {
+        // iPhone-13-ish: touch, screen shorter side (390) well below the 768 tablet threshold.
+        try (BrowserContext phoneContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(390, 844).setViewportSize(390, 844))) {
+            Page phonePage = phoneContext.newPage();
+            phonePage.navigate(BASE_URL + "/headroom-demo-activation-predicate");
+            phonePage.waitForLoadState(LoadState.NETWORKIDLE);
+
+            Locator layout = phonePage.locator("vaadin-app-layout");
+            phonePage.evaluate("() => window.scrollTo(0, 500)"); // touch mode: body-scrolling, not the content div
+            phonePage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            assertThat(layout).hasAttribute("headroom-unpinned", "");
+        }
+    }
+
+    @Test
+    void activationPredicate_suppressesEffect_onEmulatedPortraitTablet() {
+        // iPad-ish: touch, screen shorter side (768) at the tablet threshold, held portrait
+        // (width < height) - the predicate only allows TABLET in landscape, so this should
+        // never hide regardless of how far past hideTolerance the user scrolls.
+        try (BrowserContext tabletContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(768, 1024).setViewportSize(768, 1024))) {
+            Page tabletPage = tabletContext.newPage();
+            tabletPage.navigate(BASE_URL + "/headroom-demo-activation-predicate");
+            tabletPage.waitForLoadState(LoadState.NETWORKIDLE);
+
+            Locator layout = tabletPage.locator("vaadin-app-layout");
+            tabletPage.evaluate("() => window.scrollTo(0, 500)"); // touch mode: body-scrolling, not the content div
+            tabletPage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            assertThat(layout).not().hasAttribute("headroom-unpinned", "");
+        }
+    }
+
+    @Test
+    void activationPredicate_reevaluatesLive_onOrientationChange() {
+        try (BrowserContext tabletContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(768, 1024).setViewportSize(768, 1024))) {
+            Page tabletPage = tabletContext.newPage();
+            tabletPage.navigate(BASE_URL + "/headroom-demo-activation-predicate");
+            tabletPage.waitForLoadState(LoadState.NETWORKIDLE);
+
+            Locator layout = tabletPage.locator("vaadin-app-layout");
+
+            // Portrait tablet: inactive per the predicate - scrolling past hideTolerance
+            // must not hide the chrome.
+            tabletPage.evaluate("() => window.scrollTo(0, 500)");
+            tabletPage.waitForTimeout(TRANSITION_SETTLE_MS);
+            assertThat(layout).not().hasAttribute("headroom-unpinned", "");
+
+            // Back to 0 *before* rotating: _startTracking() captures its initial pinY
+            // baseline from the current scroll position the moment tracking (re)starts,
+            // so rotating while still sitting at y=500 would seed pinY at ~500 instead
+            // of ~0 - then scrolling back down to 500 would read as "no net movement
+            // from the baseline" rather than a genuine scroll past hideTolerance.
+            tabletPage.evaluate("() => window.scrollTo(0, 0)");
+
+            // Rotate to landscape (swap width/height) - windowSizeSignal() picks this up
+            // reactively and re-evaluates the predicate without any further wiring.
+            tabletPage.setViewportSize(1024, 768);
+            tabletPage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            tabletPage.evaluate("() => window.scrollTo(0, 500)");
+            tabletPage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            assertThat(layout).hasAttribute("headroom-unpinned", "");
+        }
+    }
 }

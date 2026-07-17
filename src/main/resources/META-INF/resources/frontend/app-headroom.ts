@@ -198,6 +198,12 @@ export class AppHeadroom extends LitElement {
     // property-sync RPC, not a DOM attribute; this is only ever set programmatically.
     @property({ type: Boolean, attribute: false }) pinned = true;
 
+    // Whether the scroll-tracking gesture itself runs at all (see AppHeadroom.java's
+    // setActivationPredicate/isActive) — computed server-side from device type/orientation,
+    // pushed here via property sync (not an attribute, same reasoning as `pinned`: needs to
+    // reliably round-trip a default-true value back to explicit false, and back again).
+    @property({ type: Boolean, attribute: false }) active = true;
+
     // The vaadin-app-layout this instance affects, set via executeJs("this.target = $0", ...)
     // from AppHeadroom.java's applyTo() — not a DOM attribute (it's a live element reference,
     // not a serializable value), and deliberately not discovered via this.closest(...): this
@@ -223,8 +229,19 @@ export class AppHeadroom extends LitElement {
     // Guarded by `!this._target` since a given instance's target is set exactly once.
     protected override updated(changedProperties: PropertyValues) {
         super.updated(changedProperties);
+        // Deliberately else-if: target and active can arrive in the very same batch (the
+        // initial property sync isn't guaranteed to split them across separate update
+        // cycles). _attachToTarget() already starts/skips tracking based on `active` once,
+        // as part of the initial bind — falling through to the active-branch below in that
+        // same pass would start tracking a second time.
         if (changedProperties.has('target') && this.target && !this._target) {
             this._attachToTarget(this.target);
+        } else if (changedProperties.has('active') && this._target) {
+            if (this.active) {
+                this._startTracking(this._target);
+            } else {
+                this._stopTracking();
+            }
         }
     }
 
@@ -241,6 +258,14 @@ export class AppHeadroom extends LitElement {
         this._target = target;
         target.setAttribute('headroom-enabled', '');  // activates CSS transitions above
 
+        if (this.active) {
+            this._startTracking(target);
+        }
+    }
+
+    // Wires up the scroll listener. Paired with _stopTracking(); re-entrant across
+    // pause/resume cycles driven by the `active` property, not just the initial bind.
+    private _startTracking(target: HTMLElement) {
         const OFFSET         = this.topOffset;
         const HIDE_TOLERANCE = this.hideTolerance;
         const SHOW_TOLERANCE = this.showTolerance;
@@ -249,7 +274,7 @@ export class AppHeadroom extends LitElement {
         // asynchronously, so [part="content"] doesn't exist until the next frame.
         // requestAnimationFrame schedules the callback just before the next browser repaint.
         requestAnimationFrame(() => {
-            if (!this._target) return;  // disconnected before rAF fired
+            if (!this._target || !this.active) return;  // disconnected/deactivated before rAF fired
 
             // [content] is the inner scroll container inside vaadin-app-layout's shadow DOM.
             const contentEl = target.shadowRoot?.querySelector('[content]') as HTMLElement | null;
@@ -340,19 +365,26 @@ export class AppHeadroom extends LitElement {
         });
     }
 
+    // Tears down the scroll listener and restores the target to its default shown
+    // state, without clearing `headroom-enabled`/_target — a pause, not a detach.
+    // Paired with _startTracking(); also reused by disconnectedCallback's full teardown.
+    private _stopTracking() {
+        if (this._cleanup) { this._cleanup(); this._cleanup = null; }
+        if (this._target) { resetToShownState(this._target); }
+        this._setPinned(true);
+    }
+
     // disconnectedCallback — equivalent to Vaadin's onDetach() / @PreDestroy.
     // Removes scroll listeners and restores the layout to its default state.
     override disconnectedCallback() {
         super.disconnectedCallback();
-        if (this._cleanup) { this._cleanup(); this._cleanup = null; }
+        this._stopTracking();
         if (this._target) {
-            resetToShownState(this._target);
             this._target.removeAttribute('headroom-enabled');
             this._target = null;
         }
-        this._setPinned(true);
     }
 
-    /** No visual output — this element is purely behavioural. */
+    /** No visual output — this element is purely behavioral. */
     override render() { return nothing; }
 }

@@ -4,6 +4,7 @@ import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.page.ExtendedClientDetails;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class AppHeadroomTest {
 
@@ -187,5 +190,56 @@ class AppHeadroomTest {
         ComponentUtil.fireEvent(headroom, new AppHeadroom.PinnedChangeEvent(headroom, true, false));
 
         assertEquals(0, invocationCount.get());
+    }
+
+    @Test
+    void isActive_defaultsToTrue_beforeAnyDeviceDetectionCompletes() {
+        assertTrue(AppHeadroom.applyTo(new AppLayout()).isActive());
+    }
+
+    @Test
+    void detectDeviceType_returnsDesktop_whenDetailsIsNull() {
+        assertEquals(AppHeadroom.DeviceType.DESKTOP, AppHeadroom.detectDeviceType(null));
+    }
+
+    @Test
+    void detectDeviceType_returnsDesktop_whenNotTouchDevice() {
+        var details = mock(ExtendedClientDetails.class);
+        when(details.isTouchDevice()).thenReturn(false);
+
+        assertEquals(AppHeadroom.DeviceType.DESKTOP, AppHeadroom.detectDeviceType(details));
+    }
+
+    @Test
+    void detectDeviceType_returnsTablet_whenTouchAndScreenAtOrAboveThreshold() {
+        var details = mock(ExtendedClientDetails.class);
+        when(details.isTouchDevice()).thenReturn(true);
+        when(details.getScreenWidth()).thenReturn(1024);
+        when(details.getScreenHeight()).thenReturn(768);
+
+        assertEquals(AppHeadroom.DeviceType.TABLET, AppHeadroom.detectDeviceType(details));
+    }
+
+    @Test
+    void detectDeviceType_returnsPhone_whenTouchAndScreenBelowThreshold() {
+        var details = mock(ExtendedClientDetails.class);
+        when(details.isTouchDevice()).thenReturn(true);
+        when(details.getScreenWidth()).thenReturn(844);
+        when(details.getScreenHeight()).thenReturn(390);
+
+        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details));
+    }
+
+    @Test
+    void detectDeviceType_classifiesByShorterScreenDimension_regardlessOfOrientation() {
+        // 1200x700: the *shorter* side (700) is below the 768 threshold, even though
+        // the longer side (1200) is well above it — a landscape-held device with a
+        // 700px short side is a phone, not a tablet, regardless of how it's rotated.
+        var details = mock(ExtendedClientDetails.class);
+        when(details.isTouchDevice()).thenReturn(true);
+        when(details.getScreenWidth()).thenReturn(1200);
+        when(details.getScreenHeight()).thenReturn(700);
+
+        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details));
     }
 }

@@ -8,6 +8,9 @@ A Vaadin Flow component that hides the app header when the user scrolls down and
 - [Requirement](#requirement)
 - [Usage](#usage)
 - [Configuration](#configuration)
+- [Pinning individual bars](#pinning-individual-bars)
+- [Server-visible pinned state](#server-visible-pinned-state)
+- [Restricting activation by device type/orientation](#restricting-activation-by-device-typeorientation)
 - [Development](#development)
   - [Running the demo](#running-the-demo)
   - [Integration tests](#integration-tests)
@@ -69,6 +72,52 @@ AppHeadroom.applyTo(myAppLayout)
     .setHideTolerance(10)
     .setShowTolerance(10);
 ```
+
+## Pinning individual bars
+
+A bar that's already pinned to the viewport (`position: fixed`) and shaped
+like a vertical rail rather than a horizontal bar (taller than wide) is left
+alone automatically — a plain, observable geometry fact, not something
+anything has to declare. For cases where that inference isn't right, override
+it explicitly:
+
+```java
+AppHeadroom.applyTo(myAppLayout).setBottomBarPinned(true);
+```
+
+`setTopBarPinned(boolean)` / `setBottomBarPinned(boolean)` take precedence
+over the automatic geometry check.
+
+## Server-visible pinned state
+
+```java
+var headroom = AppHeadroom.applyTo(myAppLayout);
+headroom.addPinnedChangeListener(event -> System.out.println("pinned: " + event.isPinned()));
+boolean currentlyPinned = headroom.isPinned();
+```
+
+`isPinned()` reflects whether the chrome is currently shown, kept in sync
+with the client's own scroll-driven state (also reset to `true` if `headroom`
+is detached via `remove()`). `addPinnedChangeListener` notifies on every
+change instead of polling.
+
+## Restricting activation by device type/orientation
+
+By default the effect is active on every device. To restrict it, supply a
+predicate over the session's detected device type and current orientation —
+re-evaluated automatically whenever either becomes known or changes (e.g. on
+rotation), with nothing further to wire up:
+
+```java
+AppHeadroom.applyTo(myAppLayout).setActivationPredicate((deviceType, orientation) ->
+    deviceType == AppHeadroom.DeviceType.PHONE
+        || (deviceType == AppHeadroom.DeviceType.TABLET && orientation == AppHeadroom.Orientation.LANDSCAPE));
+```
+
+Device type (`PHONE` / `TABLET` / `DESKTOP`) is classified from touch
+capability and physical screen size (not viewport width, which fluctuates as
+a desktop user resizes their browser window). `isActive()` reflects the
+predicate's last evaluation.
 
 ## Development
 
