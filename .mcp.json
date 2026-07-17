@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "java": {
+      "type": "http",
+      "url": "https://www.javadocs.dev/mcp"
+    },
+    "vaadin": {
+      "type": "http",
+      "url": "https://mcp.vaadin.com/docs"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    },
+    "fetch": {
+      "command": "npm",
+      "args": ["exec", "--silent", "--", "fetch-mcp"]
+    }
+  }
+}
