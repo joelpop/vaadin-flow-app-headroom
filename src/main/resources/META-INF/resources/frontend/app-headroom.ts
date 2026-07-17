@@ -67,8 +67,8 @@ import { customElement, property } from 'lit/decorators.js';
 // actually persists across re-evaluations.
 const GLOBAL_STYLES_INSTALLED_MARKER = '__appHeadroomGlobalStylesInstalled';
 if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MARKER]) {
-const GLOBAL_STYLES = new CSSStyleSheet();
-GLOBAL_STYLES.replaceSync(`
+    const GLOBAL_STYLES = new CSSStyleSheet();
+    GLOBAL_STYLES.replaceSync(`
     /* Body-scrolling mode: touch devices only, and only on a page that actually
        has headroom attached to its AppLayout — :has() lets us gate a rule on
        <html> by an attribute that only ever lives on a descendant element.
@@ -145,8 +145,8 @@ GLOBAL_STYLES.replaceSync(`
         }
     }
 `);
-document.adoptedStyleSheets = [...document.adoptedStyleSheets, GLOBAL_STYLES];
-(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MARKER] = true;
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, GLOBAL_STYLES];
+    (document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MARKER] = true;
 }
 
 // A bar that's already pinned to the viewport (position: fixed) AND shaped like a
@@ -281,16 +281,16 @@ export class AppHeadroom extends LitElement {
                     // Ignore bottom overscroll/bounce (iOS rubber-band effect).
                     if (y > maxY) { ticking = false; return; }
 
-                    const pinned = !target.hasAttribute('headroom-unpinned');
+                    const currentlyPinned = !target.hasAttribute('headroom-unpinned');
 
                     if (y <= OFFSET) {
                         // Always show near the top of the page.
-                        if (!pinned) {
+                        if (!currentlyPinned) {
                             resetToShownState(target);
                             pinY = y;
                             this._setPinned(true);
                         }
-                    } else if (pinned) {
+                    } else if (currentlyPinned) {
                         if ((y - pinY) > HIDE_TOLERANCE) {
                             // Scrolled down far enough from most recent upward position → hide.
                             target.setAttribute('headroom-unpinned', '');

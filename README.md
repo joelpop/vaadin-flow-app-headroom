@@ -57,11 +57,11 @@ affecting the layout itself.
 
 All setters return `this` for chaining. Call them before or after attaching — they map to HTML attributes read by the web component.
 
-| Method | Default | Effect |
-|--------|---------|--------|
-| `setTopOffset(int px)` | 100 | Distance from page top within which chrome is always shown |
-| `setHideTolerance(int px)` | 30 | Scroll-down distance required to trigger hide |
-| `setShowTolerance(int px)` | 30 | Scroll-up distance required to trigger restore |
+| Method                     | Default | Effect                                                     |
+|----------------------------|---------|------------------------------------------------------------|
+| `setTopOffset(int px)`     | 100     | Distance from page top within which chrome is always shown |
+| `setHideTolerance(int px)` | 30      | Scroll-down distance required to trigger hide              |
+| `setShowTolerance(int px)` | 30      | Scroll-up distance required to trigger restore             |
 
 ```java
 AppHeadroom.applyTo(myAppLayout)
