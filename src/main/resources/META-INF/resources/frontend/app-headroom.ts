@@ -85,10 +85,14 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
     /* Headroom-style chrome hide/show.
        ::part(navbar-top/bottom) reaches INTO vaadin-app-layout's shadow DOM
        to animate its internal bar slots. will-change promotes the layers to
-       the GPU so the slide is smooth even at 60fps on mobile. */
+       the GPU so the slide is smooth even at 60fps on mobile.
+       --headroom-transition-duration is set directly on this vaadin-app-layout
+       by _attachToTarget() (see AppHeadroom.java's setTransitionDuration) - the
+       600ms fallback here is defensive/documentation only, since that JS always
+       sets it the same moment it sets [headroom-enabled] below. */
     vaadin-app-layout[headroom-enabled]::part(navbar-top),
     vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
-        transition: transform 600ms ease;
+        transition: transform var(--headroom-transition-duration, 600ms) ease;
         will-change: transform;
     }
 
@@ -108,7 +112,8 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
 
     /* Animate the layout's padding so content expands smoothly into the vacated space. */
     vaadin-app-layout[headroom-enabled] {
-        transition: padding-top 600ms ease, padding-bottom 600ms ease;
+        transition: padding-top var(--headroom-transition-duration, 600ms) ease,
+                    padding-bottom var(--headroom-transition-duration, 600ms) ease;
     }
 
     /* Tighten the bottom bar padding so it hugs its content. */
@@ -131,7 +136,11 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
        will-change: auto clears the stacking context that confines position: fixed.
        Note: this makes navbar-bottom position:fixed for our own layout reasons,
        unrelated to any pinned-rail concept — it stays full-width/short (a bar,
-       not a rail), so looksLikeAPinnedRail() below still correctly hides it. */
+       not a rail), so looksLikeAPinnedRail() below still correctly hides it.
+       --headroom-landscape-bottom-bar-z-index is a plain CSS override point -
+       nothing in this library ever sets it; an app that needs a different
+       stacking value (e.g. to sit above/below its own fixed-position chrome)
+       sets it directly on its vaadin-app-layout. */
     @media (orientation: landscape) and (pointer: coarse) {
         vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
             position: fixed !important;
@@ -140,7 +149,7 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
             inset-inline-end: 0;
             width: 100%;
             height: auto;
-            z-index: 200;
+            z-index: var(--headroom-landscape-bottom-bar-z-index, 200);
             will-change: auto;
         }
     }
@@ -187,6 +196,11 @@ export class AppHeadroom extends LitElement {
     @property({ attribute: 'hide-tolerance', type: Number }) hideTolerance = 30;
     // Minimum upward scroll from the last hide-point before chrome re-appears.
     @property({ attribute: 'show-tolerance', type: Number }) showTolerance = 30;
+    // Milliseconds for the show/hide slide + padding transitions (see AppHeadroom.java's
+    // setTransitionDuration) — applied to the target as a CSS custom property in
+    // _attachToTarget(), since the transition rules themselves live in the shared
+    // global stylesheet, not per-instance.
+    @property({ attribute: 'transition-duration', type: Number }) transitionDuration = 600;
 
     // Explicit per-bar overrides (see AppHeadroom.java's setTopBarPinned/
     // setBottomBarPinned) — take precedence over looksLikeAPinnedRail() below.
@@ -256,6 +270,7 @@ export class AppHeadroom extends LitElement {
         }
 
         this._target = target;
+        target.style.setProperty('--headroom-transition-duration', `${this.transitionDuration}ms`);
         target.setAttribute('headroom-enabled', '');  // activates CSS transitions above
 
         if (this.active) {

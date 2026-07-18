@@ -199,7 +199,7 @@ class AppHeadroomTest {
 
     @Test
     void detectDeviceType_returnsDesktop_whenDetailsIsNull() {
-        assertEquals(AppHeadroom.DeviceType.DESKTOP, AppHeadroom.detectDeviceType(null));
+        assertEquals(AppHeadroom.DeviceType.DESKTOP, AppHeadroom.detectDeviceType(null, 768));
     }
 
     @Test
@@ -207,7 +207,7 @@ class AppHeadroomTest {
         var details = mock(ExtendedClientDetails.class);
         when(details.isTouchDevice()).thenReturn(false);
 
-        assertEquals(AppHeadroom.DeviceType.DESKTOP, AppHeadroom.detectDeviceType(details));
+        assertEquals(AppHeadroom.DeviceType.DESKTOP, AppHeadroom.detectDeviceType(details, 768));
     }
 
     @Test
@@ -217,7 +217,7 @@ class AppHeadroomTest {
         when(details.getScreenWidth()).thenReturn(1024);
         when(details.getScreenHeight()).thenReturn(768);
 
-        assertEquals(AppHeadroom.DeviceType.TABLET, AppHeadroom.detectDeviceType(details));
+        assertEquals(AppHeadroom.DeviceType.TABLET, AppHeadroom.detectDeviceType(details, 768));
     }
 
     @Test
@@ -227,7 +227,7 @@ class AppHeadroomTest {
         when(details.getScreenWidth()).thenReturn(844);
         when(details.getScreenHeight()).thenReturn(390);
 
-        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details));
+        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details, 768));
     }
 
     @Test
@@ -240,6 +240,46 @@ class AppHeadroomTest {
         when(details.getScreenWidth()).thenReturn(1200);
         when(details.getScreenHeight()).thenReturn(700);
 
-        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details));
+        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details, 768));
+    }
+
+    @Test
+    void detectDeviceType_honorsCustomThreshold_shiftingThePhoneTabletBoundary() {
+        // A 900px shorter side classifies as TABLET under the default 768 threshold,
+        // but as PHONE once the threshold is explicitly raised past it.
+        var details = mock(ExtendedClientDetails.class);
+        when(details.isTouchDevice()).thenReturn(true);
+        when(details.getScreenWidth()).thenReturn(900);
+        when(details.getScreenHeight()).thenReturn(1200);
+
+        assertEquals(AppHeadroom.DeviceType.TABLET, AppHeadroom.detectDeviceType(details, 768));
+        assertEquals(AppHeadroom.DeviceType.PHONE, AppHeadroom.detectDeviceType(details, 1000));
+    }
+
+    @Test
+    void setTabletMinShortSidePx_setsField_andReturnsThisForChaining() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setTabletMinShortSidePx(1000));
+    }
+
+    @Test
+    void setTabletMinShortSidePx_throwsIllegalArgumentException_whenNegative() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var ex = assertThrows(IllegalArgumentException.class, () -> headroom.setTabletMinShortSidePx(-1));
+        assertTrue(ex.getMessage().contains("tabletMinShortSidePx"));
+    }
+
+    @Test
+    void setTransitionDuration_setsAttribute_andReturnsThisForChaining() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setTransitionDuration(150));
+        assertEquals("150", headroom.getElement().getAttribute("transition-duration"));
+    }
+
+    @Test
+    void setTransitionDuration_throwsIllegalArgumentException_whenNegative() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var ex = assertThrows(IllegalArgumentException.class, () -> headroom.setTransitionDuration(-1));
+        assertTrue(ex.getMessage().contains("transitionDuration"));
     }
 }

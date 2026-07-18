@@ -68,15 +68,18 @@ public class AppHeadroom extends Component {
     public static final String PROPERTY_ACTIVE = "active";
     /** Wire name of the {@link #addPinnedChangeListener} DOM event. */
     public static final String EVENT_PINNED_CHANGED = "pinned-changed";
+    /** Wire name of the {@link #setTransitionDuration} attribute. */
+    public static final String ATTR_TRANSITION_DURATION = "transition-duration";
 
     /**
-     * Physical screen shorter-side threshold, in CSS pixels, used by {@link
-     * #detectDeviceType} to distinguish {@link DeviceType#TABLET} from {@link
-     * DeviceType#PHONE} among touch devices. Matches the threshold used by
-     * {@code vaadin-flow-app-nav-layout}'s equivalent device detection, so the
-     * two independently-implemented add-ons classify devices consistently.
+     * Default physical screen shorter-side threshold, in CSS pixels, used by
+     * {@link #detectDeviceType} to distinguish {@link DeviceType#TABLET} from
+     * {@link DeviceType#PHONE} among touch devices. Matches the threshold
+     * used by {@code vaadin-flow-app-nav-layout}'s equivalent device
+     * detection, so the two independently-implemented add-ons classify
+     * devices consistently unless overridden via {@link #setTabletMinShortSidePx}.
      */
-    private static final int TABLET_MIN_SHORT_SIDE_PX = 768;
+    private static final int DEFAULT_TABLET_MIN_SHORT_SIDE_PX = 768;
 
     // Known once detectDeviceType() runs (once, at first attach); never changes thereafter.
     private DeviceType deviceType;
@@ -84,6 +87,9 @@ public class AppHeadroom extends Component {
     private Orientation orientation;
     // Re-evaluated against deviceType/orientation whenever either becomes known or changes.
     private SerializableBiPredicate<DeviceType, Orientation> activationPredicate = (device, currentOrientation) -> true;
+    // See setTabletMinShortSidePx() - must be set before the target layout attaches to take
+    // effect, since detectDeviceType() only ever runs once, at first attach.
+    private int tabletMinShortSidePx = DEFAULT_TABLET_MIN_SHORT_SIDE_PX;
 
     private AppHeadroom() {}
 
@@ -126,7 +132,7 @@ public class AppHeadroom extends Component {
             // synchronously on creation), so it can't be set up any earlier than this, unlike
             // the peer-relocation/executeJs steps above, which merely need to re-run per attach.
             if (h.deviceType == null) {
-                h.deviceType = detectDeviceType(ui.getPage().getExtendedClientDetails());
+                h.deviceType = detectDeviceType(ui.getPage().getExtendedClientDetails(), h.tabletMinShortSidePx);
                 h.reevaluateActive();
 
                 // Tracks orientation reactively for as long as h itself is attached —
@@ -192,6 +198,19 @@ public class AppHeadroom extends Component {
     public AppHeadroom setShowTolerance(int px) {
         requireNonNegative(px, "showTolerance");
         getElement().setAttribute(ATTR_SHOW_TOLERANCE, String.valueOf(px));
+        return this;
+    }
+
+    /**
+     * Sets how long, in milliseconds, the show/hide slide and padding
+     * transitions take (default {@code 600}). Returns {@code this} for
+     * chaining.
+     *
+     * @throws IllegalArgumentException if {@code ms} is negative
+     */
+    public AppHeadroom setTransitionDuration(int ms) {
+        requireNonNegative(ms, "transitionDuration");
+        getElement().setAttribute(ATTR_TRANSITION_DURATION, String.valueOf(ms));
         return this;
     }
 
@@ -308,6 +327,26 @@ public class AppHeadroom extends Component {
     }
 
     /**
+     * Overrides the physical-screen-shorter-side threshold, in CSS pixels,
+     * used to distinguish {@link DeviceType#TABLET} from {@link
+     * DeviceType#PHONE} among touch devices (default {@code 768}, matching
+     * {@code vaadin-flow-app-nav-layout}'s equivalent device detection).
+     *
+     * <p>Must be called before the target {@link AppLayout} attaches to take
+     * effect — device type is detected once, at first attach, same as
+     * {@link #setActivationPredicate}'s predicate is evaluated against
+     * whatever's known at the time.
+     *
+     * @return this, for chaining
+     * @throws IllegalArgumentException if {@code px} is negative
+     */
+    public AppHeadroom setTabletMinShortSidePx(int px) {
+        requireNonNegative(px, "tabletMinShortSidePx");
+        this.tabletMinShortSidePx = px;
+        return this;
+    }
+
+    /**
      * Whether the headroom effect is currently active for this session, per
      * the last evaluation of the {@link #setActivationPredicate activation
      * predicate}. Defaults to {@code true} until device type and orientation
@@ -328,12 +367,12 @@ public class AppHeadroom extends Component {
     // (which fluctuates as a desktop user resizes their browser) and not User-Agent string
     // sniffing (fragile against browsers progressively reducing/freezing UA strings).
     // Matches vaadin-flow-app-nav-layout's equivalent device detection.
-    static DeviceType detectDeviceType(ExtendedClientDetails details) {
+    static DeviceType detectDeviceType(ExtendedClientDetails details, int tabletMinShortSidePx) {
         if (details == null || !details.isTouchDevice()) {
             return DeviceType.DESKTOP;
         }
         int minDim = Math.min(details.getScreenWidth(), details.getScreenHeight());
-        return minDim >= TABLET_MIN_SHORT_SIDE_PX ? DeviceType.TABLET : DeviceType.PHONE;
+        return minDim >= tabletMinShortSidePx ? DeviceType.TABLET : DeviceType.PHONE;
     }
 
     /** Coarse device category, used by {@link #setActivationPredicate}. */

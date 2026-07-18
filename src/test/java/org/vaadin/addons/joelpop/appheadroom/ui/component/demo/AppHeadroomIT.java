@@ -318,7 +318,8 @@ class AppHeadroomIT {
                 AppHeadroom.ATTR_HIDE_TOLERANCE,
                 AppHeadroom.ATTR_SHOW_TOLERANCE,
                 AppHeadroom.ATTR_TOP_BAR_PINNED,
-                AppHeadroom.ATTR_BOTTOM_BAR_PINNED
+                AppHeadroom.ATTR_BOTTOM_BAR_PINNED,
+                AppHeadroom.ATTR_TRANSITION_DURATION
         );
 
         assertEquals(expected, new HashSet<>(observed),
@@ -508,6 +509,71 @@ class AppHeadroomIT {
             tabletPage.waitForTimeout(TRANSITION_SETTLE_MS);
 
             assertThat(layout).hasAttribute("headroom-unpinned", "");
+        }
+    }
+
+    @Test
+    void customTabletThreshold_reclassifiesA768ScreenAsPhone() {
+        // Same 768-short-side screen that activationPredicate_suppressesEffect_onEmulatedPortraitTablet
+        // classifies as TABLET (inactive) under the *default* 768 threshold. This demo raises
+        // setTabletMinShortSidePx to 1000, and restricts activation to PHONE only - so the very
+        // same screen becoming active here proves the custom threshold actually took effect.
+        try (BrowserContext tabletContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(768, 1024).setViewportSize(768, 1024))) {
+            Page tabletPage = tabletContext.newPage();
+            tabletPage.navigate(BASE_URL + "/headroom-demo-custom-thresholds");
+            tabletPage.waitForLoadState(LoadState.NETWORKIDLE);
+
+            Locator layout = tabletPage.locator("vaadin-app-layout");
+            tabletPage.evaluate("() => window.scrollTo(0, 500)");
+            tabletPage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            assertThat(layout).hasAttribute("headroom-unpinned", "");
+        }
+    }
+
+    @Test
+    void customTransitionDuration_appliesToComputedStyle() {
+        // Set purely by _attachToTarget() at bind time, independent of whether tracking is
+        // active - so this doesn't need any device/touch emulation, unlike the test above.
+        page.navigate(BASE_URL + "/headroom-demo-custom-thresholds");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
+        String transitionDuration = (String) navbarTop.evaluate("el => getComputedStyle(el).transitionDuration");
+        assertTrue(transitionDuration.contains("0.15"),
+                "expected the custom 150ms transition duration, was: " + transitionDuration);
+    }
+
+    @Test
+    void landscapeBottomBarZIndex_isOverridableViaCssCustomProperty() {
+        // Nothing in this library ever sets --headroom-landscape-bottom-bar-z-index itself
+        // (per design - see app-headroom.ts) - this proves the var(...) plumbing an app would
+        // rely on to override it actually works.
+        try (BrowserContext tabletContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(1024, 768).setViewportSize(1024, 768))) {
+            Page tabletPage = tabletContext.newPage();
+            tabletPage.navigate(BASE_URL + "/headroom-demo");
+            tabletPage.waitForLoadState(LoadState.NETWORKIDLE);
+
+            // navbar-bottom is `hidden` by default unless the touch-optimized navbar slot
+            // has content; this demo doesn't populate it, so force it visible here - same
+            // workaround pinnedRailShapedBottomBar_isNeverTransformHidden already needs.
+            tabletPage.evaluate(
+                "() => { const el = document.querySelector('vaadin-app-layout')" +
+                "  .shadowRoot.querySelector('#navbarBottom'); " +
+                "  el.removeAttribute('hidden'); el.textContent = 'Bottom bar'; }"
+            );
+            tabletPage.evaluate(
+                "() => document.querySelector('vaadin-app-layout')" +
+                "  .style.setProperty('--headroom-landscape-bottom-bar-z-index', '999')"
+            );
+
+            Locator bottomPart = tabletPage.locator("vaadin-app-layout div[part~='navbar-bottom']");
+            String zIndex = (String) bottomPart.evaluate("el => getComputedStyle(el).zIndex");
+            assertEquals("999", zIndex);
         }
     }
 }

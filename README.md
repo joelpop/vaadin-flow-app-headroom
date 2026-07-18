@@ -60,11 +60,12 @@ affecting the layout itself.
 
 All setters return `this` for chaining. Call them before or after attaching — they map to HTML attributes read by the web component.
 
-| Method                     | Default | Effect                                                     |
-|----------------------------|---------|------------------------------------------------------------|
-| `setTopOffset(int px)`     | 100     | Distance from page top within which chrome is always shown |
-| `setHideTolerance(int px)` | 30      | Scroll-down distance required to trigger hide              |
-| `setShowTolerance(int px)` | 30      | Scroll-up distance required to trigger restore             |
+| Method                            | Default | Effect                                                     |
+|-----------------------------------|---------|------------------------------------------------------------|
+| `setTopOffset(int px)`            | 100     | Distance from page top within which chrome is always shown |
+| `setHideTolerance(int px)`        | 30      | Scroll-down distance required to trigger hide              |
+| `setShowTolerance(int px)`        | 30      | Scroll-up distance required to trigger restore             |
+| `setTransitionDuration(int ms)`   | 600     | Duration of the show/hide slide and padding transitions    |
 
 ```java
 AppHeadroom.applyTo(myAppLayout)
@@ -117,7 +118,19 @@ AppHeadroom.applyTo(myAppLayout).setActivationPredicate((deviceType, orientation
 Device type (`PHONE` / `TABLET` / `DESKTOP`) is classified from touch
 capability and physical screen size (not viewport width, which fluctuates as
 a desktop user resizes their browser window). `isActive()` reflects the
-predicate's last evaluation.
+predicate's last evaluation. The screen-size threshold that separates
+`TABLET` from `PHONE` (default `768`px, the shorter physical screen side)
+is itself overridable — must be called before the layout attaches, since
+device type is only ever detected once:
+
+```java
+AppHeadroom.applyTo(myAppLayout).setTabletMinShortSidePx(600);
+```
+
+The landscape-mode bottom bar's stacking order is a plain CSS custom
+property, not a Java API — set `--headroom-landscape-bottom-bar-z-index`
+directly on your `vaadin-app-layout` (default `200`) if it needs to sit
+above or below other fixed-position chrome in your app.
 
 ## Development
 
