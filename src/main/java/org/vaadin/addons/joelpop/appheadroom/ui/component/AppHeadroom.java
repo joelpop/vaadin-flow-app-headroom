@@ -13,6 +13,7 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.page.ExtendedClientDetails;
+import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.function.SerializableBiPredicate;
 import com.vaadin.flow.function.SerializableRunnable;
 import com.vaadin.flow.shared.Registration;
@@ -121,30 +122,7 @@ public class AppHeadroom extends Component {
         var h = new AppHeadroom();
         var layoutElement = layout.getElement();
 
-        SerializableRunnable onTargetAttach = () -> {
-            h.getElement().removeFromParent();
-            var ui = UI.getCurrentOrThrow();
-            ui.getElement().appendChild(h.getElement());
-            h.getElement().executeJs("this.target = $0;", layoutElement);
-
-            // Device type and orientation tracking are both wired once, at first attach —
-            // Signal.effect requires a live UI to even validate itself (it reads a Signal
-            // synchronously on creation), so it can't be set up any earlier than this, unlike
-            // the peer-relocation/executeJs steps above, which merely need to re-run per attach.
-            if (h.deviceType == null) {
-                h.deviceType = detectDeviceType(ui.getPage().getExtendedClientDetails(), h.tabletMinShortSidePx);
-                h.reevaluateActive();
-
-                // Tracks orientation reactively for as long as h itself is attached —
-                // Signal.effect ties its own enabled/disabled state to h's attach state
-                // automatically, so this needs no manual re-registration on later re-attaches.
-                Signal.effect(h, () -> {
-                    var size = UI.getCurrentOrThrow().getPage().windowSizeSignal().get();
-                    h.orientation = size.width() >= size.height() ? Orientation.LANDSCAPE : Orientation.PORTRAIT;
-                    h.reevaluateActive();
-                });
-            }
-        };
+        SerializableRunnable onTargetAttach = () -> bindToTarget(h, layoutElement);
         layoutElement.addAttachListener(e -> onTargetAttach.run());
         if (layoutElement.getNode().isAttached()) {
             onTargetAttach.run();
@@ -152,6 +130,38 @@ public class AppHeadroom extends Component {
         layoutElement.addDetachListener(e -> h.getElement().removeFromParent());
 
         return h;
+    }
+
+    // Re-parents h under the current UI's root and re-points the client at layoutElement.
+    // Runs once immediately if layoutElement is already attached at applyTo() call time,
+    // and again on every subsequent re-attach (see the attach listener in applyTo()).
+    private static void bindToTarget(AppHeadroom h, Element layoutElement) {
+        h.getElement().removeFromParent();
+        var ui = UI.getCurrentOrThrow();
+        ui.getElement().appendChild(h.getElement());
+        h.getElement().executeJs("this.target = $0;", layoutElement);
+
+        if (h.deviceType == null) {
+            wireDeviceAndOrientationDetection(h, ui);
+        }
+    }
+
+    // Device type and orientation tracking are both wired once, at first attach — Signal.effect
+    // requires a live UI to even validate itself (it reads a Signal synchronously on creation),
+    // so it can't be set up any earlier than this, unlike bindToTarget()'s peer-relocation/
+    // executeJs steps, which merely need to re-run per attach.
+    private static void wireDeviceAndOrientationDetection(AppHeadroom h, UI ui) {
+        h.deviceType = detectDeviceType(ui.getPage().getExtendedClientDetails(), h.tabletMinShortSidePx);
+        h.reevaluateActive();
+
+        // Tracks orientation reactively for as long as h itself is attached — Signal.effect
+        // ties its own enabled/disabled state to h's attach state automatically, so this
+        // needs no manual re-registration on later re-attaches.
+        Signal.effect(h, () -> {
+            var size = UI.getCurrentOrThrow().getPage().windowSizeSignal().get();
+            h.orientation = size.width() >= size.height() ? Orientation.LANDSCAPE : Orientation.PORTRAIT;
+            h.reevaluateActive();
+        });
     }
 
     /**
