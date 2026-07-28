@@ -14,6 +14,7 @@ A Vaadin Flow component that hides the app header when the user scrolls down and
 - [Development](#development)
   - [Running the demo](#running-the-demo)
   - [Integration tests](#integration-tests)
+- [Credits](#credits)
 - [Publishing to Vaadin Directory](#publishing-to-vaadin-directory)
 
 ## How it works
@@ -147,6 +148,14 @@ Starts the test/demo server at http://localhost:8080.
 ```
 mvn verify -Pit
 ```
+
+## Credits
+
+The "headroom" name and hide-on-scroll-down/show-on-scroll-up interaction
+pattern originate from [Headroom.js](https://github.com/WickyNilliams/headroom.js)
+by Nick Williams (MIT License). This is an independent implementation built
+for Vaadin Flow/Lit — it doesn't use any of that project's code — but the
+pattern and name are its idea.
 
 ## Publishing to Vaadin Directory
 
