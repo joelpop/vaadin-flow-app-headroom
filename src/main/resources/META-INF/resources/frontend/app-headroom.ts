@@ -70,14 +70,17 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
     const GLOBAL_STYLES = new CSSStyleSheet();
     GLOBAL_STYLES.replaceSync(`
     /* Body-scrolling mode: touch devices only, and only on a page that actually
-       has headroom attached to its AppLayout — :has() lets us gate a rule on
-       <html> by an attribute that only ever lives on a descendant element.
+       has headroom attached to and active on its AppLayout — :has() lets us
+       gate a rule on <html> by an attribute that only ever lives on a
+       descendant element. Gated on [headroom-active] (not just
+       [headroom-enabled]) since this is only needed while scroll-tracking is
+       actually running - see setActivationPredicate in AppHeadroom.java.
        Content padding lives inside the scroll container so scrolled content
        naturally fills the space vacated by the chrome. Desktop keeps the
        default Vaadin content-scrolling mode. "pointer: coarse" identifies
        touch (finger) input devices. */
     @media (pointer: coarse) {
-        html:has(vaadin-app-layout[headroom-enabled]) {
+        html:has(vaadin-app-layout[headroom-enabled][headroom-active]) {
             height: auto;
         }
     }
@@ -116,23 +119,10 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
                     padding-bottom var(--headroom-transition-duration, 600ms) ease;
     }
 
-    /* Tighten the bottom bar padding so it hugs its content. */
-    vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
-        padding-top: var(--lumo-space-xs);
-        padding-bottom: var(--lumo-space-xs);
-    }
-
-    /* In PWA standalone mode (installed to the home screen), extend the bottom
-       bar into the safe-area so content doesn't sit behind the home indicator.
-       env(safe-area-inset-bottom) is a CSS variable the browser provides only
-       in standalone mode on notch/gesture-bar devices (e.g. iPhone). */
-    @media (display-mode: standalone) {
-        vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
-            padding-bottom: env(safe-area-inset-bottom, var(--lumo-space-xs));
-        }
-    }
-
-    /* Landscape on touch: pin bottom bar to viewport bottom.
+    /* Landscape on touch: pin bottom bar to viewport bottom. Only needed while
+       body-scrolling mode (above) is on, so gated on [headroom-active] too -
+       otherwise this bar would just scroll away with the page once body-
+       scrolling kicks in, with nothing pinning it back to the viewport.
        will-change: auto clears the stacking context that confines position: fixed.
        Note: this makes navbar-bottom position:fixed for our own layout reasons,
        unrelated to any pinned-rail concept — it stays full-width/short (a bar,
@@ -140,15 +130,39 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
        --headroom-landscape-bottom-bar-z-index is a plain CSS override point -
        nothing in this library ever sets it; an app that needs a different
        stacking value (e.g. to sit above/below its own fixed-position chrome)
-       sets it directly on its vaadin-app-layout. */
+       sets it directly on its vaadin-app-layout.
+       inset-inline-start/end stay at 0 (the bar's own background/hit-area
+       still spans the full width) - safe-area clearance is added as
+       padding-inline below instead, so content is pushed away from the
+       unsafe corner area on a notched/rounded-corner phone in landscape
+       without leaving a gap that reveals page content on either side of the
+       bar. Confirmed against a real iPhone simulator screenshot; not
+       reproducible via Playwright's flat-rectangle viewport emulation, which
+       always reports env(safe-area-inset-*) as 0.
+       padding-inline uses max(), not calc()/addition: 9px is this part's own
+       already-present default touch-bar padding (Vaadin's own theme, not
+       set by this rule) - max() preserves that exact look on ordinary
+       (non-notched) devices where the env() value is 0, while still
+       guaranteeing at least the real safe-area amount where it's larger.
+       width is intentionally omitted again here too (not width: 100%), for
+       a second, distinct reason from the position:fixed/inset case above:
+       this part's box-sizing is content-box (Vaadin's own default), so an
+       explicit width: 100% plus this rule's own padding-inline would add
+       the padding on top of the full width instead of fitting inside it -
+       measured overflowing the viewport by exactly the padding amount on
+       each side. Leaving width auto lets the browser account for padding
+       when filling the space between the (0/0) insets, regardless of
+       box-sizing, since box-sizing only changes how an *explicit* width is
+       interpreted. */
     @media (orientation: landscape) and (pointer: coarse) {
-        vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
+        vaadin-app-layout[headroom-enabled][headroom-active]::part(navbar-bottom) {
             position: fixed !important;
             inset-block-end: 0;
             inset-inline-start: 0;
             inset-inline-end: 0;
-            width: 100%;
             height: auto;
+            padding-inline-start: max(9px, env(safe-area-inset-left, 0px));
+            padding-inline-end: max(9px, env(safe-area-inset-right, 0px));
             z-index: var(--headroom-landscape-bottom-bar-z-index, 200);
             will-change: auto;
         }
@@ -281,6 +295,13 @@ export class AppHeadroom extends LitElement {
     // Wires up the scroll listener. Paired with _stopTracking(); re-entrant across
     // pause/resume cycles driven by the `active` property, not just the initial bind.
     private _startTracking(target: HTMLElement) {
+        // Reflects `active` onto the target as a real DOM attribute (the property
+        // itself is attribute:false) so the CSS rules that depend on scroll-tracking
+        // actually running - body-scrolling mode and the landscape-fixed bottom bar -
+        // can gate on it too, not just [headroom-enabled]. Set synchronously, before
+        // the rAF-deferred setup below, so the CSS takes effect immediately.
+        target.setAttribute('headroom-active', '');
+
         const OFFSET         = this.topOffset;
         const HIDE_TOLERANCE = this.hideTolerance;
         const SHOW_TOLERANCE = this.showTolerance;
@@ -385,7 +406,10 @@ export class AppHeadroom extends LitElement {
     // Paired with _startTracking(); also reused by disconnectedCallback's full teardown.
     private _stopTracking() {
         if (this._cleanup) { this._cleanup(); this._cleanup = null; }
-        if (this._target) { resetToShownState(this._target); }
+        if (this._target) {
+            resetToShownState(this._target);
+            this._target.removeAttribute('headroom-active');
+        }
         this._setPinned(true);
     }
 

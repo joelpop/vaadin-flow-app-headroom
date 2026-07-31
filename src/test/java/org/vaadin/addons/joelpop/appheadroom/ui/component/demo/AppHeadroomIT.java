@@ -328,25 +328,7 @@ class AppHeadroomIT {
     }
 
     @Test
-    void unattachedAppLayout_navbarBottomPaddingNotTightened() {
-        page.navigate(BASE_URL + "/headroom-demo");
-        page.waitForLoadState(LoadState.NETWORKIDLE);
-        String attachedPadding = (String) page.locator("vaadin-app-layout div[part~='navbar-bottom']")
-                .evaluate("el => getComputedStyle(el).paddingTop");
-
-        page.navigate(BASE_URL + "/headroom-demo-ungated-css");
-        page.waitForLoadState(LoadState.NETWORKIDLE);
-        String unattachedPadding = (String) page.locator("vaadin-app-layout div[part~='navbar-bottom']")
-                .evaluate("el => getComputedStyle(el).paddingTop");
-
-        assertTrue(!attachedPadding.equals(unattachedPadding),
-                "expected navbar-bottom padding to differ between an AppLayout with headroom "
-                + "attached (" + attachedPadding + ") and one without (" + unattachedPadding
-                + ") — the [headroom-enabled] gate on the padding-tightening rule isn't working");
-    }
-
-    @Test
-    void injectedCssMediaRules_areGatedOnHeadroomEnabled() {
+    void injectedCssMediaRules_areGatedOnHeadroomEnabledAndActive() {
         page.navigate(BASE_URL + "/headroom-demo");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
@@ -365,26 +347,26 @@ class AppHeadroomIT {
             "return out; }"
         );
 
-        var standalone = rules.stream()
-                .filter(r -> r.get("media").contains("standalone"))
-                .findFirst();
-        assertTrue(standalone.isPresent() && standalone.get().get("selector").contains("headroom-enabled"),
-                "expected the display-mode:standalone navbar-bottom rule to be gated on "
-                + "[headroom-enabled]; found: " + standalone);
-
+        // These two rules only matter while scroll-tracking is actually running, so
+        // (unlike the transition/hide-transform rules) they're gated on [headroom-active]
+        // too, not just [headroom-enabled] - see the reported clipping bug this fixes:
+        // an inactive AppHeadroom must never force position:fixed on the bottom bar.
         var landscapeTouch = rules.stream()
                 .filter(r -> r.get("media").contains("landscape"))
                 .findFirst();
-        assertTrue(landscapeTouch.isPresent() && landscapeTouch.get().get("selector").contains("headroom-enabled"),
-                "expected the landscape+touch navbar-bottom rule to be gated on "
-                + "[headroom-enabled]; found: " + landscapeTouch);
+        assertTrue(landscapeTouch.isPresent()
+                        && landscapeTouch.get().get("selector").contains("headroom-enabled")
+                        && landscapeTouch.get().get("selector").contains("headroom-active"),
+                "expected the landscape+touch navbar-bottom rule to be gated on both "
+                + "[headroom-enabled] and [headroom-active]; found: " + landscapeTouch);
 
         var touchOnly = rules.stream()
                 .filter(r -> r.get("media").contains("pointer") && !r.get("media").contains("landscape"))
                 .findFirst();
-        assertTrue(touchOnly.isPresent() && touchOnly.get().get("selector").contains(":has(vaadin-app-layout[headroom-enabled])"),
+        assertTrue(touchOnly.isPresent()
+                        && touchOnly.get().get("selector").contains(":has(vaadin-app-layout[headroom-enabled][headroom-active])"),
                 "expected the touch-only html height:auto rule to be gated via "
-                + ":has(vaadin-app-layout[headroom-enabled]); found: " + touchOnly);
+                + ":has(vaadin-app-layout[headroom-enabled][headroom-active]); found: " + touchOnly);
     }
 
     /** Sets scrollTop directly on the AppLayout's shadow-DOM content container.
@@ -575,5 +557,60 @@ class AppHeadroomIT {
             String zIndex = (String) bottomPart.evaluate("el => getComputedStyle(el).zIndex");
             assertEquals("999", zIndex);
         }
+    }
+
+    @Test
+    void inactiveHeadroom_doesNotEngageBodyScrollingMode() {
+        // Regression test for a reported bug: on a touch device, an inactive AppHeadroom
+        // (e.g. TabletOnlyDemoView's predicate, which excludes PHONE entirely) must not
+        // switch <html> into body-scrolling mode - that's only needed while scroll-tracking
+        // is actually running (see the [headroom-active] gate on that CSS rule). Before this
+        // fix, [headroom-enabled] alone triggered it regardless of activation, which - among
+        // other now-removed unconditional rules - produced the reported clipped rendering.
+        //
+        // (Note: the bottom bar's own position:fixed in landscape+touch is Vaadin's own
+        // built-in behavior for this viewport shape, confirmed by directly disabling
+        // AppHeadroom's own landscape-fixed rule and observing no change - so that
+        // property isn't a usable signal here; <html>'s height is.)
+        try (BrowserContext phoneContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(844, 390).setViewportSize(844, 390))) {
+            Page phonePage = phoneContext.newPage();
+            phonePage.navigate(BASE_URL + "/headroom-demo-tablet-only");
+            phonePage.waitForLoadState(LoadState.NETWORKIDLE);
+            phonePage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            int htmlHeight = parsePx(phonePage.evaluate("() => getComputedStyle(document.documentElement).height"));
+            int viewportHeight = ((Number) phonePage.evaluate("() => window.innerHeight")).intValue();
+            assertTrue(htmlHeight <= viewportHeight + 10,
+                    "inactive AppHeadroom must not switch <html> into body-scrolling mode - "
+                    + "expected height close to the viewport (" + viewportHeight + "px), was " + htmlHeight + "px");
+        }
+    }
+
+    @Test
+    void activeHeadroom_stillEngagesBodyScrollingModeInTouch() {
+        // A/B control for the test above, on the identical emulated context: confirms the
+        // fix didn't just disable body-scrolling mode outright - it should still switch on
+        // while AppHeadroom is genuinely active (here, HeadroomDemoView's default, unrestricted
+        // predicate), where <html>'s height should grow to fit the page's full content height.
+        try (BrowserContext phoneContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(844, 390).setViewportSize(844, 390))) {
+            Page phonePage = phoneContext.newPage();
+            phonePage.navigate(BASE_URL + "/headroom-demo");
+            phonePage.waitForLoadState(LoadState.NETWORKIDLE);
+            phonePage.waitForTimeout(TRANSITION_SETTLE_MS);
+
+            int htmlHeight = parsePx(phonePage.evaluate("() => getComputedStyle(document.documentElement).height"));
+            int viewportHeight = ((Number) phonePage.evaluate("() => window.innerHeight")).intValue();
+            assertTrue(htmlHeight > viewportHeight * 2,
+                    "active AppHeadroom should still switch <html> into body-scrolling mode "
+                    + "(height should grow to fit content, viewport was " + viewportHeight + "px), was " + htmlHeight + "px");
+        }
+    }
+
+    private static int parsePx(Object cssPxValue) {
+        return (int) Double.parseDouble(((String) cssPxValue).replace("px", ""));
     }
 }
