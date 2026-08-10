@@ -7,8 +7,8 @@
     <groupId>org.vaadin.addons.joelpop</groupId>
     <artifactId>flow-app-headroom</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <name>Vaadin Flow App Headroom</name>
-    <description>Scroll-aware collapsing app bar for Vaadin applications</description>
+    <name>App Headroom for Vaadin Flow</name>
+    <description>Hides an AppLayout's top and/or bottom bar on scroll-down and restores it on scroll-up</description>
 
     <properties>
         <vaadin.version>25.1.9</vaadin.version>

@@ -163,7 +163,7 @@ You can create the zip package needed for [Vaadin Directory](https://vaadin.com/
 
 ```
 mvn versions:set -DnewVersion=1.0.0 # You cannot publish snapshot versions
-mvn package -Pdirectory
+mvn clean install -Pdirectory
 ```
 
 The package is created as `target/{project-name}-1.0.0.zip`
