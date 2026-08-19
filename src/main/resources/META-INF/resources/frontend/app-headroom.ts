@@ -39,7 +39,7 @@
  *     coincidence), which is exactly what (1) exists to override.
  */
 
-import { LitElement, css, nothing } from 'lit';
+import { LitElement, css, html } from 'lit';
 import type { PropertyValues } from 'lit';
 
 // Decorators (TypeScript annotations applied at class/field definition time):
@@ -188,12 +188,18 @@ function looksLikeAPinnedRail(el: HTMLElement | null): boolean {
 // Restores an AppLayout to its default (chrome fully shown, no bottom-bar
 // padding override) state — shared by the "near top" / "scrolled back up past
 // show tolerance" scroll transitions and by disconnectedCallback's teardown.
-function resetToShownState(el: HTMLElement): void {
+// `host` is the <app-headroom> instance itself: headroom-hide-top/bottom are
+// mirrored onto it (see the hide branch in _startTracking's onScroll) so its
+// own shadow-scoped CSS can drive condensed-view visibility independently of
+// target, which it's a peer of, not a descendant of.
+function resetToShownState(el: HTMLElement, host: HTMLElement): void {
     el.removeAttribute('headroom-unpinned');
     el.removeAttribute('headroom-hide-top');
     el.removeAttribute('headroom-hide-bottom');
     el.style.paddingTop = '';
     el.style.paddingBottom = '';
+    host.removeAttribute('headroom-hide-top');
+    host.removeAttribute('headroom-hide-bottom');
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -201,8 +207,63 @@ function resetToShownState(el: HTMLElement): void {
 @customElement('app-headroom')
 export class AppHeadroom extends LitElement {
 
-    // This element is purely behavioral — no visible output.
-    static override styles = css`:host { display: none; }`;
+    // display: contents removes this host's own box from layout/paint entirely - only
+    // its slotted children (the condensed-top/condensed-bottom Components, if any are
+    // configured via AppHeadroom.java's setCondensedTopRenderer/setCondensedBottomRenderer)
+    // actually render. With neither renderer configured, nothing is ever slotted, so this
+    // remains exactly as invisible as the plain `display: none` it replaces.
+    static override styles = css`
+        :host {
+            display: contents;
+        }
+
+        /* Positioned at their final resting spot from the start - the transition is a
+           plain cross-fade ("replace"), not a directional slide chasing the real bar's
+           translateY, so there's no slide-direction/timing to keep in sync with it beyond
+           starting in the same paint frame (see the hide branch in _startTracking's
+           onScroll, which sets the target and host attributes together, synchronously).
+           pointer-events: none while hidden so an invisible-but-still-in-the-DOM condensed
+           view never intercepts clicks meant for whatever's underneath it. */
+        ::slotted([slot='condensed-top']),
+        ::slotted([slot='condensed-bottom']) {
+            position: fixed;
+            inset-inline: 0;
+            opacity: 0;
+            pointer-events: none;
+            /* Same safe-area protection as the landscape+touch bottom bar rule in the
+               global stylesheet above, for the same reason: an arbitrary app-supplied
+               condensed Component would otherwise be just as exposed to notch/rounded-
+               corner clipping on a landscape phone. max(), not calc()/addition, so an
+               app's own padding choice for this Component is respected as-is on ordinary
+               (non-notched) devices, where env() is 0. */
+            padding-inline-start: max(9px, env(safe-area-inset-left, 0px));
+            padding-inline-end: max(9px, env(safe-area-inset-right, 0px));
+            transition: opacity var(--headroom-transition-duration, 600ms) ease;
+        }
+
+        ::slotted([slot='condensed-top']) {
+            inset-block-start: 0;
+            z-index: var(--headroom-condensed-top-z-index, 200);
+        }
+
+        ::slotted([slot='condensed-bottom']) {
+            inset-block-end: 0;
+            z-index: var(--headroom-condensed-bottom-z-index, 200);
+        }
+
+        /* headroom-hide-top/bottom mirrored onto this host (see the hide branch in
+           _startTracking's onScroll, and resetToShownState) at the exact same moments
+           they're set on/removed from target - this selector is what makes a condensed
+           view appear exactly when, and only when, the real bar it stands in for is
+           actually hidden (including never, if that bar is pinned or rail-shaped and so
+           never hides in the first place - the host attribute is only ever set inside
+           that same guard). */
+        :host([headroom-hide-top]) ::slotted([slot='condensed-top']),
+        :host([headroom-hide-bottom]) ::slotted([slot='condensed-bottom']) {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    `;
 
     // Pixels from the top below which chrome is always shown (never hidden at the top of the page).
     @property({ attribute: 'top-offset',     type: Number }) topOffset     = 100;
@@ -285,6 +346,9 @@ export class AppHeadroom extends LitElement {
 
         this._target = target;
         target.style.setProperty('--headroom-transition-duration', `${this.transitionDuration}ms`);
+        // Also set on this (the host): condensed-view transitions live in this element's
+        // own shadow-scoped styles, not target's, so they can't inherit target's copy.
+        this.style.setProperty('--headroom-transition-duration', `${this.transitionDuration}ms`);
         target.setAttribute('headroom-enabled', '');  // activates CSS transitions above
 
         if (this.active) {
@@ -347,7 +411,7 @@ export class AppHeadroom extends LitElement {
                     if (y <= OFFSET) {
                         // Always show near the top of the page.
                         if (!currentlyPinned) {
-                            resetToShownState(target);
+                            resetToShownState(target, this);
                             pinY = y;
                             this._setPinned(true);
                         }
@@ -355,11 +419,17 @@ export class AppHeadroom extends LitElement {
                         if ((y - pinY) > HIDE_TOLERANCE) {
                             // Scrolled down far enough from most recent upward position → hide.
                             target.setAttribute('headroom-unpinned', '');
+                            // Mirrored onto this (the <app-headroom> host) too, alongside target:
+                            // this element is a peer of target, not a descendant, so its own
+                            // shadow-scoped CSS (condensed-view visibility) can't react to an
+                            // attribute set only on target.
                             if (!this.topBarPinned && !looksLikeAPinnedRail(topEl)) {
                                 target.setAttribute('headroom-hide-top', '');
+                                this.setAttribute('headroom-hide-top', '');
                             }
                             if (!this.bottomBarPinned && !looksLikeAPinnedRail(bottomEl)) {
                                 target.setAttribute('headroom-hide-bottom', '');
+                                this.setAttribute('headroom-hide-bottom', '');
                             }
                             if (contentEl && contentEl.scrollTop > 0) {
                                 target.style.paddingTop = '0';    // desktop: fill the top gap
@@ -374,7 +444,7 @@ export class AppHeadroom extends LitElement {
                     } else {
                         if ((unpinY - y) > SHOW_TOLERANCE) {
                             // Scrolled up enough from most recent downward position → show.
-                            resetToShownState(target);
+                            resetToShownState(target, this);
                             pinY = y;
                             this._setPinned(true);
                         } else if (y > unpinY) {
@@ -407,7 +477,7 @@ export class AppHeadroom extends LitElement {
     private _stopTracking() {
         if (this._cleanup) { this._cleanup(); this._cleanup = null; }
         if (this._target) {
-            resetToShownState(this._target);
+            resetToShownState(this._target, this);
             this._target.removeAttribute('headroom-active');
         }
         this._setPinned(true);
@@ -424,6 +494,13 @@ export class AppHeadroom extends LitElement {
         }
     }
 
-    /** No visual output — this element is purely behavioral. */
-    override render() { return nothing; }
+    // Named slots for AppHeadroom.java's setCondensedTopRenderer/setCondensedBottomRenderer
+    // Components, appended as light-DOM children of this element with a matching `slot`
+    // attribute. With neither configured, both slots stay empty and render nothing.
+    override render() {
+        return html`
+            <slot name="condensed-top"></slot>
+            <slot name="condensed-bottom"></slot>
+        `;
+    }
 }

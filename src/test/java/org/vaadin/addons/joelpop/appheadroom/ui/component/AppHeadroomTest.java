@@ -4,6 +4,7 @@ import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.page.ExtendedClientDetails;
 import org.junit.jupiter.api.Test;
 
@@ -281,5 +282,55 @@ class AppHeadroomTest {
         var headroom = AppHeadroom.applyTo(new AppLayout());
         var ex = assertThrows(IllegalArgumentException.class, () -> headroom.setTransitionDuration(-1));
         assertTrue(ex.getMessage().contains("transitionDuration"));
+    }
+
+    @Test
+    void setCondensedTopRenderer_returnsThisForChaining() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setCondensedTopRenderer(() -> new Span("condensed top")));
+    }
+
+    @Test
+    void setCondensedBottomRenderer_returnsThisForChaining() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setCondensedBottomRenderer(() -> new Span("condensed bottom")));
+    }
+
+    @Test
+    void setCondensedTopRenderer_doesNotInvokeSupplier_beforeTargetLayoutAttachesToUI() {
+        var invocationCount = new AtomicInteger();
+        var layout = new AppLayout(); // never attached to a UI in this test
+
+        AppHeadroom.applyTo(layout).setCondensedTopRenderer(() -> {
+            invocationCount.incrementAndGet();
+            return new Span("condensed top");
+        });
+
+        assertEquals(0, invocationCount.get());
+    }
+
+    @Test
+    void setCondensedBottomRenderer_doesNotInvokeSupplier_beforeTargetLayoutAttachesToUI() {
+        var invocationCount = new AtomicInteger();
+        var layout = new AppLayout(); // never attached to a UI in this test
+
+        AppHeadroom.applyTo(layout).setCondensedBottomRenderer(() -> {
+            invocationCount.incrementAndGet();
+            return new Span("condensed bottom");
+        });
+
+        assertEquals(0, invocationCount.get());
+    }
+
+    @Test
+    void setCondensedTopRenderer_acceptsNull_withoutThrowing() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setCondensedTopRenderer(null));
+    }
+
+    @Test
+    void setCondensedBottomRenderer_acceptsNull_withoutThrowing() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setCondensedBottomRenderer(null));
     }
 }

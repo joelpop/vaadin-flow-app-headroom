@@ -393,8 +393,9 @@ class AppHeadroomIT {
         );
 
         // Simulate a companion "rail" purely via CSS, with zero reference to any
-        // specific add-on - same shape/position AppNavLayout's rail actually uses
-        // (fixed, ~80px wide, spanning most of the viewport height).
+        // specific AppLayout subclass - just the general shape/position a
+        // persistent side rail would actually use (fixed, ~80px wide, spanning
+        // most of the viewport height).
         page.addStyleTag(new Page.AddStyleTagOptions().setContent(
             "vaadin-app-layout::part(navbar-bottom) {" +
             "  position: fixed !important;" +
@@ -612,5 +613,196 @@ class AppHeadroomIT {
 
     private static int parsePx(Object cssPxValue) {
         return (int) Double.parseDouble(((String) cssPxValue).replace("px", ""));
+    }
+
+    @Test
+    void condensedTopRenderer_isAbsentFromDom_whenNoRendererConfigured() {
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        assertEquals(0, page.locator("[slot='condensed-top']").count());
+    }
+
+    @Test
+    void condensedTopRenderer_isPresentButHidden_whileRealBarIsShown() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+        assertEquals(1, condensedTop.count());
+        assertEquals("0", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+    }
+
+    @Test
+    void condensedTopRenderer_becomesVisible_whenRealTopBarHidesOnScroll() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+
+        scrollTo(contentEl, 500); // past topOffset(100) + hideTolerance(40)
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertEquals("1", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+        assertTrue(navbarTop.boundingBox().y < 0,
+                "real navbar-top should still be transform-hidden off-screen, was y=" + navbarTop.boundingBox().y);
+        // Fade-only design: the condensed view never slides, it stays at its resting
+        // position (inset-block-start: 0) the whole time - only opacity changes.
+        assertTrue(Math.abs(condensedTop.boundingBox().y) < 1,
+                "condensed top view should stay at its resting position (y≈0), was y=" + condensedTop.boundingBox().y);
+    }
+
+    @Test
+    void condensedBottomRenderer_becomesVisible_whenRealBottomBarHidesOnScroll() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator navbarBottom = page.locator("vaadin-app-layout div[part~='navbar-bottom']");
+        Locator condensedBottom = page.locator("#" + CondensedViewDemoView.CONDENSED_BOTTOM_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertEquals("1", (String) condensedBottom.evaluate("el => getComputedStyle(el).opacity"));
+        String transform = (String) navbarBottom.evaluate("el => getComputedStyle(el).transform");
+        assertTrue(!transform.equals("none"),
+                "real navbar-bottom should be transform-hidden, was: " + transform);
+    }
+
+    @Test
+    void condensedTopRenderer_hidesAgain_whenScrollingBackUpPastShowTolerance() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+        assertEquals("1", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+
+        scrollTo(contentEl, 500 - 45); // > showTolerance(40) upward from the unpin point
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+        assertEquals("0", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+    }
+
+    @Test
+    void condensedView_transitionDuration_matchesConfiguredTransitionDuration() {
+        // Built regardless of whether tracking is active - see CustomThresholdsDemoView's
+        // own Javadoc - so no device emulation is needed here, same as
+        // customTransitionDuration_appliesToComputedStyle above.
+        page.navigate(BASE_URL + "/headroom-demo-custom-thresholds");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator condensedTop = page.locator("#" + CustomThresholdsDemoView.CONDENSED_TOP_ID);
+        String transitionDuration = (String) condensedTop.evaluate("el => getComputedStyle(el).transitionDuration");
+        assertTrue(transitionDuration.contains("0.15"),
+                "expected the custom 150ms transition duration on the condensed view, was: " + transitionDuration);
+    }
+
+    @Test
+    void condensedBottomRenderer_neverAppears_overPinnedRailShapedBottomBar() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        // Simulate a companion "rail" purely via CSS, same technique as
+        // pinnedRailShapedBottomBar_isNeverTransformHidden above.
+        page.addStyleTag(new Page.AddStyleTagOptions().setContent(
+            "vaadin-app-layout::part(navbar-bottom) {" +
+            "  position: fixed !important;" +
+            "  top: 0; bottom: 0; left: 0;" +
+            "  width: 80px;" +
+            "  height: auto;" +
+            "}"
+        ));
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator layout = page.locator("vaadin-app-layout");
+        Locator headroomHost = page.locator("app-headroom");
+        Locator condensedBottom = page.locator("#" + CondensedViewDemoView.CONDENSED_BOTTOM_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        // Overall scroll state still tracks correctly...
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+        // ...but the rail-shaped bar's condensed view never appears either - the host
+        // attribute driving it is set inside the exact same looksLikeAPinnedRail() guard
+        // that already exempts the real bar.
+        assertThat(headroomHost).not().hasAttribute("headroom-hide-bottom", "");
+        assertEquals("0", (String) condensedBottom.evaluate("el => getComputedStyle(el).opacity"));
+    }
+
+    @Test
+    void condensedBottomRenderer_neverAppears_whenBottomBarExplicitlyPinned() {
+        page.navigate(BASE_URL + "/headroom-demo-explicit-pin");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator headroomHost = page.locator("app-headroom");
+        Locator condensedBottom = page.locator("#" + ExplicitPinDemoView.CONDENSED_BOTTOM_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertThat(headroomHost).not().hasAttribute("headroom-hide-bottom", "");
+        assertEquals("0", (String) condensedBottom.evaluate("el => getComputedStyle(el).opacity"));
+    }
+
+    @Test
+    void removingHeadroomFromLayout_alsoRemovesCondensedComponentsFromDom() {
+        page.navigate(BASE_URL + "/headroom-demo-detach");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator removeButton = page.locator("#" + DetachResetDemoView.REMOVE_BUTTON_ID);
+        Locator condensedTop = page.locator("#" + DetachResetDemoView.CONDENSED_TOP_ID);
+
+        assertThat(condensedTop).hasCount(1);
+
+        removeButton.dispatchEvent("click");
+
+        // hasCount (unlike a plain count() call) auto-retries until the assertion holds
+        // or times out - needed here since the removal reaches the client only after the
+        // click's server round trip completes, not synchronously with the click itself.
+        assertThat(condensedTop).hasCount(0);
+    }
+
+    @Test
+    void setCondensedTopRenderer_calledAgainAfterAttach_replacesPreviouslyAttachedComponent() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+        Locator replacedCondensedTop = page.locator("#" + CondensedViewDemoView.REPLACED_CONDENSED_TOP_ID);
+        Locator replaceButton = page.locator("#" + CondensedViewDemoView.REPLACE_CONDENSED_TOP_BUTTON_ID);
+
+        assertThat(condensedTop).hasCount(1);
+        assertThat(replacedCondensedTop).hasCount(0);
+
+        replaceButton.click();
+
+        // hasCount auto-retries until the click's server round trip completes and the
+        // client applies the swap - see removingHeadroomFromLayout_alsoRemovesCondensedComponentsFromDom
+        // above for the same reasoning.
+        assertThat(condensedTop).hasCount(0);
+        assertThat(replacedCondensedTop).hasCount(1);
+    }
+
+    @Test
+    void condensedTopRenderer_respectsSafeAreaPadding() {
+        // env(safe-area-inset-*) always resolves to 0 in this environment (established
+        // earlier this session - the real bottom bar's own safe-area rule has no numeric
+        // IT test for the same reason), so this asserts against max()'s 9px floor rather
+        // than a genuinely non-zero override - the same accepted limitation as that rule,
+        // not a new gap introduced here.
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+        assertEquals("9px", (String) condensedTop.evaluate("el => getComputedStyle(el).paddingInlineStart"));
+        assertEquals("9px", (String) condensedTop.evaluate("el => getComputedStyle(el).paddingInlineEnd"));
     }
 }

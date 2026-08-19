@@ -9,6 +9,7 @@ A Vaadin Flow component that hides the app header when the user scrolls down and
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Pinning individual bars](#pinning-individual-bars)
+- [Condensed views](#condensed-views)
 - [Server-visible pinned state](#server-visible-pinned-state)
 - [Restricting activation by device type/orientation](#restricting-activation-by-device-typeorientation)
 - [Development](#development)
@@ -48,11 +49,11 @@ AppHeadroom.applyTo(myAppLayout);
 `applyTo` is the only entry point: it validates that `myAppLayout` is backed by
 the standard `vaadin-app-layout` web component, creates an `AppHeadroom`, and
 returns the instance for chaining. This works the same regardless of whether
-`myAppLayout` is a plain `AppLayout` or a subclass (e.g. `vaadin-flow-app-nav-layout`'s
-`AppNavLayout`) — `AppHeadroom` attaches itself as a peer element alongside the
-layout (never as a light-DOM child of it), so it never shows up in
-`myAppLayout.getChildren()` and needs no cooperation from whatever the layout
-subclass does with its own children.
+`myAppLayout` is a plain `AppLayout` or a subclass (e.g. one that adds a
+persistent side rail of its own) — `AppHeadroom` attaches itself as a peer
+element alongside the layout (never as a light-DOM child of it), so it never
+shows up in `myAppLayout.getChildren()` and needs no cooperation from
+whatever the layout subclass does with its own children.
 
 Call `headroom.remove()` to detach headroom behavior from the layout without
 affecting the layout itself.
@@ -89,6 +90,38 @@ AppHeadroom.applyTo(myAppLayout).setBottomBarPinned(true);
 
 `setTopBarPinned(boolean)` / `setBottomBarPinned(boolean)` take precedence
 over the automatic geometry check.
+
+## Condensed views
+
+By default, a hidden bar shows nothing — content simply reflows into the
+vacated space. `setCondensedTopRenderer`/`setCondensedBottomRenderer` let you
+show a small alternate `Component` instead, cross-fading into view exactly
+as the real bar slides away (and back out as it returns):
+
+```java
+AppHeadroom.applyTo(myAppLayout)
+    .setCondensedTopRenderer(() -> new CondensedHeader())
+    .setCondensedBottomRenderer(() -> new CondensedFooter());
+```
+
+Default `null` for both — today's "show nothing while hidden" behavior is
+unchanged unless you opt in. The renderer is invoked at most once, lazily,
+the first time it's actually needed, not eagerly when the setter is called.
+
+A condensed view never appears for a bar that never hides in the first
+place — the same automatic pinned-rail geometry check and
+`setTopBarPinned`/`setBottomBarPinned` overrides from
+[Pinning individual bars](#pinning-individual-bars) apply to it exactly as
+they already do to the real bar.
+
+The transition is a plain cross-fade — the condensed view stays at its final
+resting position the whole time; only opacity changes, timed with
+`setTransitionDuration`. Safe-area padding (clearing a notch/rounded corner
+on a landscape phone) is applied automatically, the same way it already is
+for the real landscape bottom bar. `--headroom-condensed-top-z-index` /
+`--headroom-condensed-bottom-z-index` (default `200`) are plain CSS custom
+property override points for stacking, the same convention as
+`--headroom-landscape-bottom-bar-z-index`.
 
 ## Server-visible pinned state
 

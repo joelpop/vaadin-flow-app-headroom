@@ -14,6 +14,7 @@ public class DetachResetDemoView extends AppLayout {
 
     public static final String PINNED_STATE_ID = "pinned-state";
     public static final String REMOVE_BUTTON_ID = "remove-headroom-button";
+    public static final String CONDENSED_TOP_ID = "condensed-top-view";
 
     public DetachResetDemoView() {
         var pinnedState = new Span("pinned");
@@ -34,7 +35,12 @@ public class DetachResetDemoView extends AppLayout {
         var headroom = AppHeadroom.applyTo(this)
                 .setTopOffset(100)
                 .setHideTolerance(40)
-                .setShowTolerance(40);
+                .setShowTolerance(40)
+                .setCondensedTopRenderer(() -> {
+                    var span = new Span("Condensed top");
+                    span.setId(CONDENSED_TOP_ID);
+                    return span;
+                });
         headroom.addPinnedChangeListener(event ->
                 pinnedState.setText(event.isPinned() ? "pinned" : "unpinned"));
 

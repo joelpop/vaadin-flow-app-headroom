@@ -15,9 +15,12 @@ import org.vaadin.addons.joelpop.appheadroom.ui.component.AppHeadroom;
 @Route("headroom-demo-explicit-pin")
 public class ExplicitPinDemoView extends AppLayout {
 
+    public static final String CONDENSED_BOTTOM_ID = "condensed-bottom-view";
+
     public ExplicitPinDemoView() {
         // touch-optimized ensures the navbar-bottom slot is actually rendered
-        // (it's `hidden` by default otherwise), matching how AppNavLayout does it.
+        // (it's `hidden` by default otherwise) - a standard vaadin-app-layout
+        // custom property, not anything specific to a particular AppLayout subclass.
         getStyle().set("--vaadin-app-layout-touch-optimized", "true");
         addToNavbar(true, new Span("Bottom bar"));
 
@@ -32,6 +35,11 @@ public class ExplicitPinDemoView extends AppLayout {
                 .setTopOffset(100)
                 .setHideTolerance(40)
                 .setShowTolerance(40)
-                .setBottomBarPinned(true);
+                .setBottomBarPinned(true)
+                .setCondensedBottomRenderer(() -> {
+                    var span = new Span("Condensed bottom");
+                    span.setId(CONDENSED_BOTTOM_ID);
+                    return span;
+                });
     }
 }

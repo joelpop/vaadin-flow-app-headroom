@@ -16,6 +16,7 @@ import com.vaadin.flow.component.page.ExtendedClientDetails;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.function.SerializableBiPredicate;
 import com.vaadin.flow.function.SerializableRunnable;
+import com.vaadin.flow.function.SerializableSupplier;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.flow.signals.Signal;
 
@@ -71,6 +72,10 @@ public class AppHeadroom extends Component {
     public static final String EVENT_PINNED_CHANGED = "pinned-changed";
     /** Wire name of the {@link #setTransitionDuration} attribute. */
     public static final String ATTR_TRANSITION_DURATION = "transition-duration";
+    /** {@code slot} name a {@link #setCondensedTopRenderer} Component's element is attached under. */
+    public static final String SLOT_CONDENSED_TOP = "condensed-top";
+    /** {@code slot} name a {@link #setCondensedBottomRenderer} Component's element is attached under. */
+    public static final String SLOT_CONDENSED_BOTTOM = "condensed-bottom";
 
     /**
      * Default physical screen shorter-side threshold, in CSS pixels, used by
@@ -91,6 +96,15 @@ public class AppHeadroom extends Component {
     // See setTabletMinShortSidePx() - must be set before the target layout attaches to take
     // effect, since detectDeviceType() only ever runs once, at first attach.
     private int tabletMinShortSidePx = DEFAULT_TABLET_MIN_SHORT_SIDE_PX;
+    // Null means "no condensed view" - a legitimate, permanent value, not something to
+    // reset away from - see setCondensedTopRenderer/setCondensedBottomRenderer.
+    private SerializableSupplier<Component> condensedTopRenderer;
+    private SerializableSupplier<Component> condensedBottomRenderer;
+    // Memoized result of the corresponding renderer above - built at most once per
+    // renderer "generation" (i.e. per setter call that actually changes it), the first
+    // time there's an attached target to build it against.
+    private Component condensedTopComponent;
+    private Component condensedBottomComponent;
 
     private AppHeadroom() {}
 
@@ -144,6 +158,7 @@ public class AppHeadroom extends Component {
         if (h.deviceType == null) {
             wireDeviceAndOrientationDetection(h, ui);
         }
+        h.ensureCondensedComponentsBuilt();
     }
 
     // Device type and orientation tracking are both wired once, at first attach — Signal.effect
@@ -227,6 +242,73 @@ public class AppHeadroom extends Component {
     private static void requireNonNegative(int px, String paramName) {
         if (px < 0) {
             throw new IllegalArgumentException(paramName + " must not be negative, was " + px);
+        }
+    }
+
+    /**
+     * Sets a lazily-built, small alternate Component to cross-fade into view in place
+     * of the top bar while it's scroll-hidden. Default {@code null}: nothing is shown
+     * while hidden, same as before this method existed. Returns {@code this} for
+     * chaining.
+     *
+     * <p>{@code renderer} is invoked at most once, the first time it's actually needed
+     * (once the target {@link AppLayout} is attached) — not eagerly when this method is
+     * called. Calling this again (including with {@code null}) tears down any
+     * previously-built condensed Component first.
+     *
+     * <p>Never shown for a top bar that never hides in the first place — the automatic
+     * pinned-rail geometry check and {@link #setTopBarPinned} both apply to the
+     * condensed view exactly as they already do to the real bar.
+     */
+    public AppHeadroom setCondensedTopRenderer(SerializableSupplier<Component> renderer) {
+        condensedTopRenderer = renderer;
+        condensedTopComponent = rebuildCondensedComponent(condensedTopComponent, renderer, SLOT_CONDENSED_TOP);
+        return this;
+    }
+
+    /** Same as {@link #setCondensedTopRenderer}, for the bottom bar. */
+    public AppHeadroom setCondensedBottomRenderer(SerializableSupplier<Component> renderer) {
+        condensedBottomRenderer = renderer;
+        condensedBottomComponent = rebuildCondensedComponent(condensedBottomComponent, renderer, SLOT_CONDENSED_BOTTOM);
+        return this;
+    }
+
+    // Tears down `existing` if present, then - only if this instance is already bound to
+    // a live UI (getElement().getParent() != null; this instance is only ever parented
+    // under the UI root by bindToTarget(), so this is a reliable "already attached at
+    // least once" check) - builds and attaches the new one immediately, since the
+    // renderer was just (re)configured on an already-running instance. If not yet
+    // attached, building is deferred entirely to ensureCondensedComponentsBuilt(),
+    // called once from bindToTarget() at first attach - that's the "lazy" half.
+    private Component rebuildCondensedComponent(Component existing,
+            SerializableSupplier<Component> renderer, String slot) {
+        if (existing != null) {
+            getElement().removeChild(existing.getElement());
+        }
+        if (renderer != null && getElement().getParent() != null) {
+            return attachCondensedComponent(renderer, slot);
+        }
+        return null;
+    }
+
+    private Component attachCondensedComponent(SerializableSupplier<Component> renderer, String slot) {
+        var built = renderer.get();
+        built.getElement().setAttribute("slot", slot);
+        getElement().appendChild(built.getElement());
+        return built;
+    }
+
+    // Builds whichever condensed component(s) are configured but not yet built - called
+    // once from bindToTarget() at first attach, mirroring how
+    // wireDeviceAndOrientationDetection() is similarly deferred to first attach. A no-op
+    // for any renderer left null, and re-entrant-safe on later re-attaches (already-built
+    // components are skipped).
+    private void ensureCondensedComponentsBuilt() {
+        if (condensedTopComponent == null && condensedTopRenderer != null) {
+            condensedTopComponent = attachCondensedComponent(condensedTopRenderer, SLOT_CONDENSED_TOP);
+        }
+        if (condensedBottomComponent == null && condensedBottomRenderer != null) {
+            condensedBottomComponent = attachCondensedComponent(condensedBottomRenderer, SLOT_CONDENSED_BOTTOM);
         }
     }
 
