@@ -255,9 +255,13 @@ export class AppHeadroom extends LitElement {
         /* AppHeadroom-owned wrapper around each condensed slot - handles positioning,
            centering, and the show/hide transition, so an app-supplied condensed
            Component needs zero layout code of its own to be positioned correctly.
-           display: flex + justify-content: center centers a narrower-than-full-width
-           child for free; a width: 100% child (the ribbon shape's own frame - see
-           AppHeadroom.java's RibbonCondensedBar) fills it edge-to-edge instead.
+           display: flex gives shrink-to-fit sizing along the main axis for free,
+           regardless of the slotted content's own display type (inline, block,
+           whatever an app's Component happens to be) - needed so the floating shape's
+           width: fit-content (below) actually shrinks to the content rather than
+           circularly depending on it; a width: 100% child (the ribbon shape's own
+           frame - see AppHeadroom.java's RibbonCondensedBar) fills it edge-to-edge
+           instead, making the flex shrink-to-fit moot there.
            Positioned at its final resting spot from the start - the transition is a
            plain cross-fade ("replace"), not a directional slide chasing the real bar's
            translateY, so there's no slide-direction/timing to keep in sync with it beyond
@@ -271,15 +275,51 @@ export class AppHeadroom extends LitElement {
            that shape; asRibbon() stays fully flush here since its own frame handles
            clearance internally instead (its background needs to reach the true edge,
            which an inset on this wrapper would prevent - the bug this whole shape-aware
-           redesign exists to fix). */
+           redesign exists to fix).
+           Clickable (see _expand()): a condensed view is only ever a stand-in for the
+           real bar it replaces, so tapping/clicking it always returns to the shown
+           state - user-select: none guards against a tap-and-hold text-selection
+           gesture firing instead on touch devices (as well as an accidental drag-select
+           on desktop), unconditionally regardless of pointer type; the cursor itself is
+           scoped to devices that actually have a fine pointer, below - there's no useful
+           "this is clickable" affordance to show a touch-only device, which has no
+           cursor to change.
+           -webkit-user-select/-webkit-touch-callout are iOS Safari's own separate
+           mechanism for this, not just a legacy alias: unprefixed user-select: none
+           alone still leaves iOS's long-press text-selection (and the "Copy / Look Up /
+           Translate" callout menu that comes with it) active on a real device -
+           -webkit-touch-callout is the property that specifically suppresses that
+           callout, independent of whether the text itself gets selected. Both are
+           inherited properties, same as user-select, so setting them here (a flat-tree
+           ancestor of the slotted content, not just its light-DOM one) reaches the
+           app's actual Component the same way.
+           Both (cursor and selection) apply to this wrapper's own box, so its box needs
+           to actually match the visible/clickable area - fine for the ribbon shape (the frame IS the whole
+           bar, so click-anywhere-on-the-bar is correct, same as a real toolbar), but
+           NOT fine for the floating shape if the wrapper stayed stretched full-width
+           the way the ribbon shape's does: an app's compact, centered Component would
+           end up sitting inside an invisible full-width click/cursor target reaching
+           well past its own edges. See the floating-specific rules below for the fix
+           (shrink the wrapper itself to the content, rather than centering the content
+           within a stretched wrapper) - that's what keeps this scoped to the app's
+           actual component in floating mode. */
         .condensed-top-wrapper,
         .condensed-bottom-wrapper {
             position: fixed;
             display: flex;
-            justify-content: center;
             opacity: 0;
             pointer-events: none;
             transition: opacity var(--headroom-transition-duration, 600ms) ease;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        @media (any-pointer: fine) {
+            .condensed-top-wrapper,
+            .condensed-bottom-wrapper {
+                cursor: var(--vaadin-clickable-cursor, pointer);
+            }
         }
 
         /* Floating: AppHeadroom owns the whole gap on every side, reconciled - not
@@ -287,11 +327,20 @@ export class AppHeadroom extends LitElement {
            landscape bottom bar's own padding-inline already uses.
            --headroom-condensed-gap is a plain CSS override point, same convention as
            the z-index custom properties below - nothing in this library ever sets it
-           itself, an app that wants a different default gap sets it directly. */
+           itself, an app that wants a different default gap sets it directly.
+           width: fit-content + margin-inline: auto (rather than a stretched
+           inset-inline-start/end box centered via justify-content) shrinks the
+           wrapper's own box down to exactly the app's rendered Component, then centers
+           that shrunk box between the two insets - the standard technique for centering
+           a shrink-to-fit absolutely/fixed-positioned box between two fixed edges.
+           This is what keeps the click/cursor/user-select behavior above scoped to the
+           app's actual component rather than the whole invisible row around it. */
         :host([condensed-top-shape='floating']) .condensed-top-wrapper {
             inset-inline-start: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-left, 0px));
             inset-inline-end: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-right, 0px));
             inset-block-start: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-top, 0px));
+            width: fit-content;
+            margin-inline: auto;
             z-index: var(--headroom-condensed-top-z-index, 200);
         }
 
@@ -299,6 +348,8 @@ export class AppHeadroom extends LitElement {
             inset-inline-start: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-left, 0px));
             inset-inline-end: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-right, 0px));
             inset-block-end: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-bottom, 0px));
+            width: fit-content;
+            margin-inline: auto;
             z-index: var(--headroom-condensed-bottom-z-index, 200);
         }
 
@@ -379,6 +430,45 @@ export class AppHeadroom extends LitElement {
 
     private _target: HTMLElement | null = null;
     private _cleanup: (() => void) | null = null;
+    // Lifted out of _startTracking's own closure (rather than kept as local
+    // variables there) specifically so _expand() - a genuinely separate code
+    // path, triggered by a condensed-view click rather than a scroll event -
+    // can read and update the exact same state onScroll's own branches do,
+    // keeping future scroll-driven hide/show decisions consistent with a
+    // click-driven one.
+    private _contentEl: HTMLElement | null = null; // [content] - vaadin-app-layout's own scroll container
+    private _pinY = 0;    // y where chrome was last shown
+    private _unpinY = 0;  // y where chrome was last hidden
+
+    // Combines both scroll sources: window.scrollY (mobile page-scroll) and
+    // contentEl.scrollTop (desktop content-scroll). Only one is non-zero at a time.
+    private _getY(): number {
+        return window.scrollY + (this._contentEl?.scrollTop ?? 0);
+    }
+
+    private _getMaxY(): number {
+        return (this._contentEl && this._contentEl.scrollTop > 0)
+            ? this._contentEl.scrollHeight - this._contentEl.clientHeight
+            : document.documentElement.scrollHeight - window.innerHeight;
+    }
+
+    // Click handler for both condensed-view wrappers (see render()) - manually
+    // returns to the shown state, the same one onScroll's own "scrolled back up"
+    // branches already trigger. Deliberately doesn't touch scroll position
+    // itself, matching how scrolling up naturally doesn't force a jump either -
+    // it only brings the chrome back. Brings back *both* bars together
+    // regardless of which condensed view was clicked, since resetToShownState
+    // clears both unconditionally - matches the single, not per-bar, pinned
+    // state this component has always had.
+    // Guarded on headroom-unpinned rather than assuming the click implies it:
+    // defensive against a click event that somehow still fires after the
+    // wrapper's own pointer-events: none should already have suppressed it.
+    private _expand = () => {
+        if (!this._target || !this._target.hasAttribute('headroom-unpinned')) return;
+        resetToShownState(this._target, this);
+        this._pinY = this._getY();
+        this._setPinned(true);
+    };
 
     // Updates `pinned` and notifies the server, but only on an actual state change —
     // avoids firing on every scroll-driven rAF tick.
@@ -454,7 +544,9 @@ export class AppHeadroom extends LitElement {
             if (!this._target || !this.active) return;  // disconnected/deactivated before rAF fired
 
             // [content] is the inner scroll container inside vaadin-app-layout's shadow DOM.
-            const contentEl = target.shadowRoot?.querySelector('[content]') as HTMLElement | null;
+            // Stored on the instance (rather than kept local) so _getY()/_getMaxY() - and
+            // through them, _expand() - can see it too, not just this closure.
+            this._contentEl = target.shadowRoot?.querySelector('[content]') as HTMLElement | null;
             // The bar elements themselves, cached once — same DOM nodes for the component's
             // lifetime, though their computed position/shape can change dynamically (e.g. a
             // companion layout switching a nav bar in/out of rail mode on viewport resize),
@@ -462,23 +554,16 @@ export class AppHeadroom extends LitElement {
             const topEl    = target.shadowRoot?.querySelector('[part~="navbar-top"]') as HTMLElement | null;
             const bottomEl = target.shadowRoot?.querySelector('[part~="navbar-bottom"]') as HTMLElement | null;
 
-            // Combine both scroll sources: window.scrollY (mobile page-scroll) and
-            // contentEl.scrollTop (desktop content-scroll). Only one is non-zero at a time.
-            const getY    = () => window.scrollY + (contentEl?.scrollTop ?? 0);
-            const getMaxY = () => (contentEl && contentEl.scrollTop > 0)
-                ? contentEl.scrollHeight - contentEl.clientHeight
-                : document.documentElement.scrollHeight - window.innerHeight;
-
-            let pinY    = getY();  // y where chrome was last shown
-            let unpinY  = 0;       // y where chrome was last hidden
-            let ticking = false;   // rAF debounce: only one frame callback queued at a time
+            this._pinY    = this._getY();  // y where chrome was last shown
+            this._unpinY  = 0;             // y where chrome was last hidden
+            let ticking   = false;         // rAF debounce: only one frame callback queued at a time
 
             const onScroll = () => {
                 if (ticking) return;
                 ticking = true;
                 requestAnimationFrame(() => {
-                    const y    = getY();
-                    const maxY = getMaxY();
+                    const y    = this._getY();
+                    const maxY = this._getMaxY();
 
                     // Ignore bottom overscroll/bounce (iOS rubber-band effect).
                     if (y > maxY) { ticking = false; return; }
@@ -489,11 +574,11 @@ export class AppHeadroom extends LitElement {
                         // Always show near the top of the page.
                         if (!currentlyPinned) {
                             resetToShownState(target, this);
-                            pinY = y;
+                            this._pinY = y;
                             this._setPinned(true);
                         }
                     } else if (currentlyPinned) {
-                        if ((y - pinY) > HIDE_TOLERANCE) {
+                        if ((y - this._pinY) > HIDE_TOLERANCE) {
                             // Scrolled down far enough from most recent upward position → hide.
                             target.setAttribute('headroom-unpinned', '');
                             // The real bar's own attribute: gated by both the explicit pin and
@@ -517,27 +602,27 @@ export class AppHeadroom extends LitElement {
                             if (!this.bottomBarPinned) {
                                 this.setAttribute('headroom-hide-bottom', '');
                             }
-                            if (contentEl && contentEl.scrollTop > 0) {
+                            if (this._contentEl && this._contentEl.scrollTop > 0) {
                                 target.style.paddingTop = '0';    // desktop: fill the top gap
                             } else {
                                 target.style.paddingBottom = '0'; // mobile: collapse bottom bar space
                             }
-                            unpinY = y;
+                            this._unpinY = y;
                             this._setPinned(false);
-                        } else if (y < pinY) {
-                            pinY = y;
+                        } else if (y < this._pinY) {
+                            this._pinY = y;
                         }
                     } else {
-                        if ((unpinY - y) > SHOW_TOLERANCE) {
+                        if ((this._unpinY - y) > SHOW_TOLERANCE) {
                             // Scrolled up enough from most recent downward position → show.
                             resetToShownState(target, this);
-                            pinY = y;
+                            this._pinY = y;
                             this._setPinned(true);
-                        } else if (y > unpinY) {
+                        } else if (y > this._unpinY) {
                             // Cap unpinY below the true bottom so rubber-band deceleration
                             // (which can bounce SHOW_TOLERANCE+ px) isn't mistaken for
                             // intentional upward scrolling.
-                            unpinY = Math.min(y, maxY - SHOW_TOLERANCE * 2);
+                            this._unpinY = Math.min(y, maxY - SHOW_TOLERANCE * 2);
                         }
                     }
 
@@ -549,10 +634,10 @@ export class AppHeadroom extends LitElement {
             // preventDefault() — allows the browser to scroll immediately without
             // waiting for our callback, keeping scrolling smooth on mobile.
             window.addEventListener('scroll', onScroll, { passive: true });
-            contentEl?.addEventListener('scroll', onScroll, { passive: true });
+            this._contentEl?.addEventListener('scroll', onScroll, { passive: true });
             this._cleanup = () => {
                 window.removeEventListener('scroll', onScroll);
-                contentEl?.removeEventListener('scroll', onScroll);
+                this._contentEl?.removeEventListener('scroll', onScroll);
             };
         });
     }
@@ -584,13 +669,18 @@ export class AppHeadroom extends LitElement {
     // condensedTopShape/condensedBottomShape property is non-null (AppHeadroom.java's
     // CondensedBar#asFloating()/asRibbon() with a non-null renderer) - with neither
     // configured, render() produces nothing, same as before this feature existed.
+    // @click on both wrappers → _expand(): a condensed view stands in for the real
+    // bar it replaces, so clicking/tapping it always returns to the shown state (see
+    // _expand()'s own comment for why it's safe to wire this unconditionally rather
+    // than only while actually visible/interactive - pointer-events: none already
+    // keeps it un-clickable the rest of the time).
     override render() {
         return html`
             ${this.condensedTopShape
-                ? html`<div class="condensed-top-wrapper"><slot name="condensed-top"></slot></div>`
+                ? html`<div class="condensed-top-wrapper" @click=${this._expand}><slot name="condensed-top"></slot></div>`
                 : nothing}
             ${this.condensedBottomShape
-                ? html`<div class="condensed-bottom-wrapper"><slot name="condensed-bottom"></slot></div>`
+                ? html`<div class="condensed-bottom-wrapper" @click=${this._expand}><slot name="condensed-bottom"></slot></div>`
                 : nothing}
         `;
     }

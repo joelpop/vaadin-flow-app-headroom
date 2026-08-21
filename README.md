@@ -155,6 +155,15 @@ rail-shaped. The one thing that does suppress it: an explicit
 `setTopBarPinned(true)`/`setBottomBarPinned(true)` — a deliberate "never hide
 this" declaration from your own code, unlike the automatic geometry guess.
 
+Clicking (or tapping) a condensed view always brings the real bars back —
+both together, regardless of which one was clicked, since there's a single
+pinned state for the whole layout, not one per bar. Nothing to configure:
+the cursor changes to `var(--vaadin-clickable-cursor, pointer)` on devices
+with a fine pointer (a mouse; touch-only devices show no cursor change,
+having no cursor to change), and the condensed view's text is never
+selectable, guarding against an accidental tap-and-hold or drag-select
+gesture firing instead of the click.
+
 ## Server-visible pinned state
 
 ```java

@@ -953,4 +953,184 @@ class AppHeadroomIT {
         assertEquals("0px", (String) frame.evaluate("el => getComputedStyle(el).paddingTop"));
         assertEquals("0px", (String) frame.evaluate("el => getComputedStyle(el).paddingBottom"));
     }
+
+    @Test
+    void condensedTop_click_returnsToShownState_withoutMovingScrollPosition() {
+        // Click-to-expand: a condensed view is a stand-in for the real bar, so clicking
+        // it always brings the real chrome back - see app-headroom.ts's _expand(). The
+        // scroll position itself is deliberately left alone, matching how scrolling
+        // back up doesn't force a jump either - only the chrome's pinned state changes.
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator layout = page.locator("vaadin-app-layout");
+        Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+
+        condensedTop.click();
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertThat(layout).not().hasAttribute("headroom-unpinned", "");
+        assertTrue(navbarTop.boundingBox().y >= 0,
+                "navbar-top should be back on-screen after clicking the condensed view, was y=" + navbarTop.boundingBox().y);
+        assertEquals(500, ((Number) contentEl.evaluate("el => el.scrollTop")).intValue(),
+                "clicking the condensed view should not itself move the scroll position");
+        pauseForHumanIfHeaded();
+    }
+
+    @Test
+    void condensedBottom_click_alsoRestoresTopBar() {
+        // Only one pinned state exists for the whole layout (not one per bar), so
+        // clicking either condensed view brings back both bars together - see
+        // _expand()'s own comment on why it doesn't try to distinguish which one was
+        // clicked.
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
+        Locator condensedBottom = page.locator("#" + CondensedViewDemoView.CONDENSED_BOTTOM_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+        assertTrue(navbarTop.boundingBox().y < 0, "navbar-top should be hidden before the click");
+
+        condensedBottom.click();
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertTrue(navbarTop.boundingBox().y >= 0,
+                "navbar-top should be restored too, having clicked only the condensed bottom view");
+    }
+
+    @Test
+    void condensedWrapper_isNotTextSelectable() {
+        // app-headroom.ts also declares -webkit-user-select: none and
+        // -webkit-touch-callout: none - a real device (iOS Safari) showed plain
+        // user-select: none alone still leaves long-press text-selection, and its
+        // accompanying "Copy / Look Up / Translate" callout, active. Neither is
+        // independently checkable here, so this test only covers the unprefixed
+        // property: confirmed via a Chromium probe (this codebase's only browser
+        // engine) that -webkit-user-select is a pure alias of user-select there,
+        // reporting whatever user-select already resolves to regardless of whether
+        // it's separately declared - so asserting it here wouldn't distinguish a
+        // regression from a pass, and -webkit-touch-callout is a WebKit-exclusive
+        // property Chromium doesn't recognize at all (getComputedStyle reports an
+        // empty string for it). Both are an accepted, unverifiable-here limitation,
+        // the same as env(safe-area-inset-*) elsewhere - the fix itself is real and
+        // needed on the actual target platform, just not provable through this
+        // Chromium-only IT harness.
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+        assertEquals("none", (String) wrapper.evaluate("el => getComputedStyle(el).userSelect"));
+    }
+
+    @Test
+    void condensedWrapper_cursor_isPointerOnAFinePointerDevice_butNotOnATouchOnlyDevice() {
+        // Default context here has no touch capability, so Chromium reports a fine
+        // primary pointer - the same emulation-realism this codebase already relies on
+        // for @media (pointer: coarse) (see activationPredicate_allowsEffect_onEmulatedPhone).
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+        assertEquals("pointer", (String) wrapper.evaluate("el => getComputedStyle(el).cursor"));
+
+        try (BrowserContext touchContext = browser.newContext(new Browser.NewContextOptions()
+                .setHasTouch(true).setIsMobile(true)
+                .setScreenSize(390, 844).setViewportSize(390, 844))) {
+            Page touchPage = touchContext.newPage();
+            touchPage.navigate(BASE_URL + "/headroom-demo-condensed");
+            touchPage.waitForLoadState(LoadState.NETWORKIDLE);
+            Locator touchWrapper = touchPage.locator("app-headroom").locator(".condensed-top-wrapper");
+            assertTrue(!"pointer".equals(touchWrapper.evaluate("el => getComputedStyle(el).cursor")),
+                    "a touch-only device has no cursor to change - the pointer cursor shouldn't apply there");
+        }
+    }
+
+    @Test
+    void asFloating_wrapper_shrinksToTheAppComponent_notTheWholeRow() {
+        // If the wrapper stayed stretched full-width the way the ribbon shape's does
+        // (see asRibbon_wrapper_staysFullWidth_soClickingAnywhereOnTheBarExpands below),
+        // clicking/hovering anywhere in that invisible row - including well outside the
+        // app's own compact Component - would incorrectly trigger _expand() and show a
+        // pointer cursor. See the width: fit-content + margin-inline: auto comment on
+        // the floating-specific rules in app-headroom.ts.
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        var wrapperBox = wrapper.boundingBox();
+        var contentBox = condensedTop.boundingBox();
+        assertTrue(Math.abs(wrapperBox.width - contentBox.width) < 2,
+                "wrapper should shrink to the app's own Component width, was wrapper=" + wrapperBox.width
+                        + " content=" + contentBox.width);
+    }
+
+    @Test
+    void asFloating_clickingBesideTheAppComponent_doesNotTriggerExpand() {
+        page.navigate(BASE_URL + "/headroom-demo-condensed");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator layout = page.locator("vaadin-app-layout");
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+
+        // A point near the viewport's right edge - nowhere near the centered "Condensed
+        // top" text regardless of how it's aligned, but squarely inside the old,
+        // full-width stretched row (spanning edge to edge minus the safe-area gaps).
+        // Clicking here must NOT trigger _expand(), unlike clicking the component
+        // itself (see condensedTop_click_returnsToShownState_withoutMovingScrollPosition
+        // above).
+        var wrapperBox = wrapper.boundingBox();
+        var viewport = page.viewportSize();
+        double farRightX = viewport.width - 20;
+        double y = wrapperBox.y + wrapperBox.height / 2;
+        page.mouse().click(farRightX, y);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+    }
+
+    @Test
+    void asRibbon_wrapper_staysFullWidth_soClickingAnywhereOnTheBarExpands() {
+        // The opposite of the floating shape, deliberately: the ribbon frame IS the
+        // whole visible bar, so click-anywhere-on-the-bar is correct - the same
+        // expectation a real toolbar/nav bar already sets. Guards against a future
+        // change accidentally shrinking this shape's wrapper the same way the floating
+        // shape's was just narrowed.
+        page.navigate(BASE_URL + "/headroom-demo-ribbon");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator layout = page.locator("vaadin-app-layout");
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+
+        scrollTo(contentEl, 500);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+        assertThat(layout).hasAttribute("headroom-unpinned", "");
+
+        // Near the bar's left edge, well away from the centered "Condensed top" text -
+        // still inside the frame/wrapper since it spans edge-to-edge in this shape.
+        var wrapperBox = wrapper.boundingBox();
+        page.mouse().click(wrapperBox.x + 5, wrapperBox.y + wrapperBox.height / 2);
+        page.waitForTimeout(TRANSITION_SETTLE_MS);
+
+        assertThat(layout).not().hasAttribute("headroom-unpinned", "");
+    }
 }
