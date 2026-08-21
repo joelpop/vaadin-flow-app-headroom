@@ -294,8 +294,9 @@ export class AppHeadroom extends LitElement {
            ancestor of the slotted content, not just its light-DOM one) reaches the
            app's actual Component the same way.
            Both (cursor and selection) apply to this wrapper's own box, so its box needs
-           to actually match the visible/clickable area - fine for the ribbon shape (the frame IS the whole
-           bar, so click-anywhere-on-the-bar is correct, same as a real toolbar), but
+           to actually match the visible/clickable area - fine for the ribbon shape (the
+           frame IS the whole bar, so click-anywhere-on-the-bar is correct, same as a
+           real toolbar), but
            NOT fine for the floating shape if the wrapper stayed stretched full-width
            the way the ribbon shape's does: an app's compact, centered Component would
            end up sitting inside an invisible full-width click/cursor target reaching

@@ -423,8 +423,7 @@ public class AppHeadroom extends Component {
             newFrame.getStyle().setBackground("var(--vaadin-background-container)");
             if (bar.isTop()) {
                 newFrame.getStyle().setPaddingTop("env(safe-area-inset-top, 0px)");
-            }
-            else {
+            } else {
                 newFrame.getStyle().setPaddingBottom("env(safe-area-inset-bottom, 0px)");
             }
             bar.setSlotComponent(SHAPE_RIBBON, newFrame);
