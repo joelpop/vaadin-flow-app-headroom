@@ -31,15 +31,15 @@ public class ExplicitPinDemoView extends AppLayout {
         }
         setContent(content);
 
-        AppHeadroom.applyTo(this)
+        var headroom = AppHeadroom.applyTo(this)
                 .setTopOffset(100)
                 .setHideTolerance(40)
                 .setShowTolerance(40)
-                .setBottomBarPinned(true)
-                .setCondensedBottomRenderer(() -> {
-                    var span = new Span("Condensed bottom");
-                    span.setId(CONDENSED_BOTTOM_ID);
-                    return span;
-                });
+                .setBottomBarPinned(true);
+        headroom.getCondensedBottom().asFloating().setRenderer(() -> {
+            var span = new Span("Condensed bottom");
+            span.setId(CONDENSED_BOTTOM_ID);
+            return span;
+        });
     }
 }

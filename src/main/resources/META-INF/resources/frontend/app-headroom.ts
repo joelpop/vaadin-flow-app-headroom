@@ -37,9 +37,19 @@
  *     being inferred rather than declared, it can occasionally be wrong (e.g. a
  *     bar in an unusually narrow embedded viewport might look rail-shaped by
  *     coincidence), which is exactly what (1) exists to override.
+ *
+ * Only (1) also suppresses a condensed view (see AppHeadroom.java's
+ * getCondensedTop()/getCondensedBottom()) — (2) only ever affects
+ * the real bar's own slide-away. A condensed Component is a peer element
+ * positioned relative to the viewport, not a descendant of the target layout,
+ * with no structural relationship to whatever made the real bar rail-shaped;
+ * an automatic geometry guess about the real bar has no way to know whether
+ * the two are even related, so it stays out of the condensed view's decision
+ * entirely. An explicit pin, by contrast, is a deliberate declaration from
+ * application code, so it suppresses both.
  */
 
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import type { PropertyValues } from 'lit';
 
 // Decorators (TypeScript annotations applied at class/field definition time):
@@ -92,11 +102,34 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
        --headroom-transition-duration is set directly on this vaadin-app-layout
        by _attachToTarget() (see AppHeadroom.java's setTransitionDuration) - the
        600ms fallback here is defensive/documentation only, since that JS always
-       sets it the same moment it sets [headroom-enabled] below. */
+       sets it the same moment it sets [headroom-enabled] below.
+       opacity and visibility are transitioned alongside transform, all three
+       at the same duration, so they start and finish together in *both*
+       directions - opacity is what actually produces the visible fade;
+       visibility (a "discrete" property - nothing to interpolate between
+       visible/hidden) is what makes a bar genuinely disappear once that fade
+       finishes, rather than just going transparent while still occupying
+       hit-testing/accessibility-tree space. The CSS Transitions spec defines
+       discrete properties to flip only at the very end of a transition toward
+       the non-default value, and at the very start toward the default value -
+       visibility is the canonical property that rule was written for, so this
+       needs no JS timing of its own, just listing it alongside the others.
+       Only declared once, here, on the shared base rule - the two
+       [headroom-hide-top/bottom] rules below only need to set the target
+       values (transform/opacity/visibility), not redeclare this same
+       transition list, since they match the same element simultaneously and
+       don't override it.
+       visibility being inherited (unlike transform/opacity, which only affect
+       painted layers) is also what makes this reach a bar's own content that
+       doesn't respond to transform at all - e.g. an AppLayout extension's own
+       popover/overlay-based UI escaping the normal paint hierarchy. */
     vaadin-app-layout[headroom-enabled]::part(navbar-top),
     vaadin-app-layout[headroom-enabled]::part(navbar-bottom) {
-        transition: transform var(--headroom-transition-duration, 600ms) ease;
-        will-change: transform;
+        transition: transform var(--headroom-transition-duration, 600ms) ease,
+                    opacity var(--headroom-transition-duration, 600ms) ease,
+                    visibility var(--headroom-transition-duration, 600ms) ease;
+        will-change: transform, opacity;
+        opacity: 1;
     }
 
     /* translateY(-100%) slides the top bar upward by its own height (off-screen).
@@ -105,12 +138,16 @@ if (!(document as unknown as Record<string, boolean>)[GLOBAL_STYLES_INSTALLED_MA
        looksLikeAPinnedRail() in connectedCallback). */
     vaadin-app-layout[headroom-hide-top]::part(navbar-top) {
         transform: translateY(-100%);
+        opacity: 0;
+        visibility: hidden;
     }
 
     /* translateY(100%) slides the bottom bar downward by its own height. Same
        pinned-rail deferral as navbar-top above. */
     vaadin-app-layout[headroom-hide-bottom]::part(navbar-bottom) {
         transform: translateY(100%);
+        opacity: 0;
+        visibility: hidden;
     }
 
     /* Animate the layout's padding so content expands smoothly into the vacated space. */
@@ -208,58 +245,89 @@ function resetToShownState(el: HTMLElement, host: HTMLElement): void {
 export class AppHeadroom extends LitElement {
 
     // display: contents removes this host's own box from layout/paint entirely - only
-    // its slotted children (the condensed-top/condensed-bottom Components, if any are
-    // configured via AppHeadroom.java's setCondensedTopRenderer/setCondensedBottomRenderer)
-    // actually render. With neither renderer configured, nothing is ever slotted, so this
-    // remains exactly as invisible as the plain `display: none` it replaces.
+    // the condensed-top/condensed-bottom wrapper elements below (rendered only when a
+    // renderer is actually configured - see render()) actually take up any space.
     static override styles = css`
         :host {
             display: contents;
         }
 
-        /* Positioned at their final resting spot from the start - the transition is a
+        /* AppHeadroom-owned wrapper around each condensed slot - handles positioning,
+           centering, and the show/hide transition, so an app-supplied condensed
+           Component needs zero layout code of its own to be positioned correctly.
+           display: flex + justify-content: center centers a narrower-than-full-width
+           child for free; a width: 100% child (the ribbon shape's own frame - see
+           AppHeadroom.java's RibbonCondensedBar) fills it edge-to-edge instead.
+           Positioned at its final resting spot from the start - the transition is a
            plain cross-fade ("replace"), not a directional slide chasing the real bar's
            translateY, so there's no slide-direction/timing to keep in sync with it beyond
            starting in the same paint frame (see the hide branch in _startTracking's
            onScroll, which sets the target and host attributes together, synchronously).
-           pointer-events: none while hidden so an invisible-but-still-in-the-DOM condensed
-           view never intercepts clicks meant for whatever's underneath it. */
-        ::slotted([slot='condensed-top']),
-        ::slotted([slot='condensed-bottom']) {
+           pointer-events: none while hidden so an invisible-but-still-in-the-DOM wrapper
+           never intercepts clicks meant for whatever's underneath it.
+           Safe-area clearance (inset-inline/inset-block below) is shape-specific, not
+           set here - see the two shape-scoped rule pairs that follow this one:
+           asFloating() reconciles it via max() since AppHeadroom owns the whole gap for
+           that shape; asRibbon() stays fully flush here since its own frame handles
+           clearance internally instead (its background needs to reach the true edge,
+           which an inset on this wrapper would prevent - the bug this whole shape-aware
+           redesign exists to fix). */
+        .condensed-top-wrapper,
+        .condensed-bottom-wrapper {
             position: fixed;
-            inset-inline: 0;
+            display: flex;
+            justify-content: center;
             opacity: 0;
             pointer-events: none;
-            /* Same safe-area protection as the landscape+touch bottom bar rule in the
-               global stylesheet above, for the same reason: an arbitrary app-supplied
-               condensed Component would otherwise be just as exposed to notch/rounded-
-               corner clipping on a landscape phone. max(), not calc()/addition, so an
-               app's own padding choice for this Component is respected as-is on ordinary
-               (non-notched) devices, where env() is 0. */
-            padding-inline-start: max(9px, env(safe-area-inset-left, 0px));
-            padding-inline-end: max(9px, env(safe-area-inset-right, 0px));
             transition: opacity var(--headroom-transition-duration, 600ms) ease;
         }
 
-        ::slotted([slot='condensed-top']) {
+        /* Floating: AppHeadroom owns the whole gap on every side, reconciled - not
+           simply added - against the safe area via max(), the same pattern the real
+           landscape bottom bar's own padding-inline already uses.
+           --headroom-condensed-gap is a plain CSS override point, same convention as
+           the z-index custom properties below - nothing in this library ever sets it
+           itself, an app that wants a different default gap sets it directly. */
+        :host([condensed-top-shape='floating']) .condensed-top-wrapper {
+            inset-inline-start: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-left, 0px));
+            inset-inline-end: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-right, 0px));
+            inset-block-start: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-top, 0px));
+            z-index: var(--headroom-condensed-top-z-index, 200);
+        }
+
+        :host([condensed-bottom-shape='floating']) .condensed-bottom-wrapper {
+            inset-inline-start: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-left, 0px));
+            inset-inline-end: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-right, 0px));
+            inset-block-end: max(var(--headroom-condensed-gap, 8px), env(safe-area-inset-bottom, 0px));
+            z-index: var(--headroom-condensed-bottom-z-index, 200);
+        }
+
+        /* Ribbon: wrapper stays fully flush to the true edge on every side - the
+           frame (AppHeadroom.java's RibbonCondensedBar) handles its own safe-area
+           clearance internally via padding, so its background can still reach the
+           true edge while only its content is inset. */
+        :host([condensed-top-shape='ribbon']) .condensed-top-wrapper {
+            inset-inline: 0;
             inset-block-start: 0;
             z-index: var(--headroom-condensed-top-z-index, 200);
         }
 
-        ::slotted([slot='condensed-bottom']) {
+        :host([condensed-bottom-shape='ribbon']) .condensed-bottom-wrapper {
+            inset-inline: 0;
             inset-block-end: 0;
             z-index: var(--headroom-condensed-bottom-z-index, 200);
         }
 
         /* headroom-hide-top/bottom mirrored onto this host (see the hide branch in
-           _startTracking's onScroll, and resetToShownState) at the exact same moments
-           they're set on/removed from target - this selector is what makes a condensed
-           view appear exactly when, and only when, the real bar it stands in for is
-           actually hidden (including never, if that bar is pinned or rail-shaped and so
-           never hides in the first place - the host attribute is only ever set inside
-           that same guard). */
-        :host([headroom-hide-top]) ::slotted([slot='condensed-top']),
-        :host([headroom-hide-bottom]) ::slotted([slot='condensed-bottom']) {
+           _startTracking's onScroll, and resetToShownState) - this selector is what
+           makes a condensed view fade in exactly when the user has scrolled past the
+           hide threshold, purely on scroll position: unlike the real bar's own
+           headroom-hide-top/bottom (set on target, gated additionally by the
+           pinned-rail geometry check), the host's copy is only ever also gated by an
+           explicit setTopBarPinned/setBottomBarPinned - see the file header comment
+           above for why the automatic geometry check doesn't apply here too. */
+        :host([headroom-hide-top]) .condensed-top-wrapper,
+        :host([headroom-hide-bottom]) .condensed-bottom-wrapper {
             opacity: 1;
             pointer-events: auto;
         }
@@ -281,6 +349,15 @@ export class AppHeadroom extends LitElement {
     // setBottomBarPinned) — take precedence over looksLikeAPinnedRail() below.
     @property({ attribute: 'top-bar-pinned',    type: Boolean }) topBarPinned    = false;
     @property({ attribute: 'bottom-bar-pinned', type: Boolean }) bottomBarPinned = false;
+
+    // Which shape (if any) each bar's condensed view is - see AppHeadroom.java's
+    // CondensedBar#asFloating()/asRibbon(). null means "none configured". Java
+    // sets/clears this directly, at the exact moment it adds/removes a bar's
+    // content - this side never infers presence by observing slot/DOM content
+    // itself. Drives both whether a bar's wrapper <div> is rendered at all (see
+    // render() below) and which shape-scoped CSS rule applies (see the styles above).
+    @property({ attribute: 'condensed-top-shape' })    condensedTopShape: string | null    = null;
+    @property({ attribute: 'condensed-bottom-shape' }) condensedBottomShape: string | null = null;
 
     // Server-visible pinned/unpinned state (see AppHeadroom.isPinned() / addPinnedChangeListener).
     // attribute: false — Flow's @Synchronize reads the client JS property via the
@@ -419,16 +496,25 @@ export class AppHeadroom extends LitElement {
                         if ((y - pinY) > HIDE_TOLERANCE) {
                             // Scrolled down far enough from most recent upward position → hide.
                             target.setAttribute('headroom-unpinned', '');
-                            // Mirrored onto this (the <app-headroom> host) too, alongside target:
-                            // this element is a peer of target, not a descendant, so its own
-                            // shadow-scoped CSS (condensed-view visibility) can't react to an
-                            // attribute set only on target.
+                            // The real bar's own attribute: gated by both the explicit pin and
+                            // the automatic pinned-rail geometry guess, same as always.
                             if (!this.topBarPinned && !looksLikeAPinnedRail(topEl)) {
                                 target.setAttribute('headroom-hide-top', '');
-                                this.setAttribute('headroom-hide-top', '');
                             }
                             if (!this.bottomBarPinned && !looksLikeAPinnedRail(bottomEl)) {
                                 target.setAttribute('headroom-hide-bottom', '');
+                            }
+                            // Mirrored onto this (the <app-headroom> host) too - this element is
+                            // a peer of target, not a descendant, so its own shadow-scoped CSS
+                            // (condensed-view visibility) can't react to an attribute set only on
+                            // target. Deliberately NOT also gated by looksLikeAPinnedRail() here
+                            // (see the file header comment for why): only the explicit pin
+                            // suppresses a condensed view, since the automatic geometry guess has
+                            // no way to know whether it's even related to one.
+                            if (!this.topBarPinned) {
+                                this.setAttribute('headroom-hide-top', '');
+                            }
+                            if (!this.bottomBarPinned) {
                                 this.setAttribute('headroom-hide-bottom', '');
                             }
                             if (contentEl && contentEl.scrollTop > 0) {
@@ -494,13 +580,18 @@ export class AppHeadroom extends LitElement {
         }
     }
 
-    // Named slots for AppHeadroom.java's setCondensedTopRenderer/setCondensedBottomRenderer
-    // Components, appended as light-DOM children of this element with a matching `slot`
-    // attribute. With neither configured, both slots stay empty and render nothing.
+    // Each wrapper (see the styles above) is only rendered at all when the matching
+    // condensedTopShape/condensedBottomShape property is non-null (AppHeadroom.java's
+    // CondensedBar#asFloating()/asRibbon() with a non-null renderer) - with neither
+    // configured, render() produces nothing, same as before this feature existed.
     override render() {
         return html`
-            <slot name="condensed-top"></slot>
-            <slot name="condensed-bottom"></slot>
+            ${this.condensedTopShape
+                ? html`<div class="condensed-top-wrapper"><slot name="condensed-top"></slot></div>`
+                : nothing}
+            ${this.condensedBottomShape
+                ? html`<div class="condensed-bottom-wrapper"><slot name="condensed-bottom"></slot></div>`
+                : nothing}
         `;
     }
 }

@@ -1,7 +1,6 @@
 package org.vaadin.addons.joelpop.appheadroom.ui.component.demo;
 
 import com.vaadin.flow.component.applayout.AppLayout;
-import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Paragraph;
@@ -10,20 +9,17 @@ import com.vaadin.flow.router.Route;
 import org.vaadin.addons.joelpop.appheadroom.ui.component.AppHeadroom;
 
 /**
- * Demo view for {@link AppHeadroom.CondensedBar#asFloating()}. Touch-optimized
+ * Demo view for {@link AppHeadroom.CondensedBar#asRibbon()}. Touch-optimized
  * (with a populated bottom navbar item) so navbar-bottom actually renders,
- * matching how {@code ExplicitPinDemoView} avoids needing the {@code hidden}-
- * attribute removal workaround other, non-touch-optimized demos need.
+ * same reasoning as {@code CondensedViewDemoView}.
  */
-@Route("headroom-demo-condensed")
-public class CondensedViewDemoView extends AppLayout {
+@Route("headroom-demo-ribbon")
+public class RibbonCondensedViewDemoView extends AppLayout {
 
     public static final String CONDENSED_TOP_ID = "condensed-top-view";
     public static final String CONDENSED_BOTTOM_ID = "condensed-bottom-view";
-    public static final String REPLACED_CONDENSED_TOP_ID = "replaced-condensed-top-view";
-    public static final String REPLACE_CONDENSED_TOP_BUTTON_ID = "replace-condensed-top-button";
 
-    public CondensedViewDemoView() {
+    public RibbonCondensedViewDemoView() {
         getStyle().set("--vaadin-app-layout-touch-optimized", "true");
 
         var headroom = AppHeadroom.applyTo(this)
@@ -31,26 +27,18 @@ public class CondensedViewDemoView extends AppLayout {
                 .setHideTolerance(40)
                 .setShowTolerance(40);
 
-        headroom.getCondensedTop().asFloating().setRenderer(() -> {
+        headroom.getCondensedTop().asRibbon().setRenderer(() -> {
             var span = new Span("Condensed top");
             span.setId(CONDENSED_TOP_ID);
             return span;
         });
-        headroom.getCondensedBottom().asFloating().setRenderer(() -> {
+        headroom.getCondensedBottom().asRibbon().setRenderer(() -> {
             var span = new Span("Condensed bottom");
             span.setId(CONDENSED_BOTTOM_ID);
             return span;
         });
 
-        var replaceButton = new Button("Replace condensed top", event ->
-                headroom.getCondensedTop().asFloating().setRenderer(() -> {
-                    var span = new Span("Replaced condensed top");
-                    span.setId(REPLACED_CONDENSED_TOP_ID);
-                    return span;
-                }));
-        replaceButton.setId(REPLACE_CONDENSED_TOP_BUTTON_ID);
-
-        addToNavbar(new H3("Condensed views demo"), replaceButton);
+        addToNavbar(new H3("Ribbon condensed views demo"));
         addToNavbar(true, new Span("Bottom bar"));
 
         var content = new Div();

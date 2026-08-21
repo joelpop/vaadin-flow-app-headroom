@@ -35,12 +35,12 @@ public class DetachResetDemoView extends AppLayout {
         var headroom = AppHeadroom.applyTo(this)
                 .setTopOffset(100)
                 .setHideTolerance(40)
-                .setShowTolerance(40)
-                .setCondensedTopRenderer(() -> {
-                    var span = new Span("Condensed top");
-                    span.setId(CONDENSED_TOP_ID);
-                    return span;
-                });
+                .setShowTolerance(40);
+        headroom.getCondensedTop().asFloating().setRenderer(() -> {
+            var span = new Span("Condensed top");
+            span.setId(CONDENSED_TOP_ID);
+            return span;
+        });
         headroom.addPinnedChangeListener(event ->
                 pinnedState.setText(event.isPinned() ? "pinned" : "unpinned"));
 

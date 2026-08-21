@@ -285,52 +285,175 @@ class AppHeadroomTest {
     }
 
     @Test
-    void setCondensedTopRenderer_returnsThisForChaining() {
+    void asFloating_returnsSameInstance_onRepeatedCalls_soChainedSetRendererWorks() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        assertSame(headroom, headroom.setCondensedTopRenderer(() -> new Span("condensed top")));
+        var floating = headroom.getCondensedTop().asFloating();
+        assertSame(floating, floating.setRenderer(() -> new Span("condensed top")));
     }
 
     @Test
-    void setCondensedBottomRenderer_returnsThisForChaining() {
+    void asRibbon_returnsSameInstance_onRepeatedCalls_soChainedSetRendererWorks() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        assertSame(headroom, headroom.setCondensedBottomRenderer(() -> new Span("condensed bottom")));
+        var ribbon = headroom.getCondensedBottom().asRibbon();
+        assertSame(ribbon, ribbon.setRenderer(() -> new Span("condensed bottom")));
     }
 
     @Test
-    void setCondensedTopRenderer_doesNotInvokeSupplier_beforeTargetLayoutAttachesToUI() {
+    void asFloating_setRenderer_invokesSupplierImmediately_regardlessOfTargetLayoutAttachState() {
+        // Deliberately unconditional on attach state (see CondensedBar's Javadoc): an
+        // Element subtree can be assembled before it's attached to a live UI, so
+        // there's no need to defer - and deferring turned out to be actively harmful,
+        // since a target layout's own attach/detach timing isn't reliably observable
+        // from a peer element (see ARCHITECTURE_REVIEW.md for the real-world bug this
+        // caused in a consuming app).
         var invocationCount = new AtomicInteger();
         var layout = new AppLayout(); // never attached to a UI in this test
 
-        AppHeadroom.applyTo(layout).setCondensedTopRenderer(() -> {
+        AppHeadroom.applyTo(layout).getCondensedTop().asFloating().setRenderer(() -> {
             invocationCount.incrementAndGet();
             return new Span("condensed top");
         });
 
-        assertEquals(0, invocationCount.get());
+        assertEquals(1, invocationCount.get());
     }
 
     @Test
-    void setCondensedBottomRenderer_doesNotInvokeSupplier_beforeTargetLayoutAttachesToUI() {
+    void asRibbon_setRenderer_invokesSupplierImmediately_regardlessOfTargetLayoutAttachState() {
         var invocationCount = new AtomicInteger();
         var layout = new AppLayout(); // never attached to a UI in this test
 
-        AppHeadroom.applyTo(layout).setCondensedBottomRenderer(() -> {
+        AppHeadroom.applyTo(layout).getCondensedBottom().asRibbon().setRenderer(() -> {
             invocationCount.incrementAndGet();
             return new Span("condensed bottom");
         });
 
-        assertEquals(0, invocationCount.get());
+        assertEquals(1, invocationCount.get());
     }
 
     @Test
-    void setCondensedTopRenderer_acceptsNull_withoutThrowing() {
+    void asFloating_setRenderer_calledAgain_removesPreviouslyAttachedComponent() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        assertSame(headroom, headroom.setCondensedTopRenderer(null));
+        var floating = headroom.getCondensedTop().asFloating();
+        var first = new Span("first");
+        floating.setRenderer(() -> first);
+        assertEquals(first.getElement(), headroom.getElement().getChild(0));
+
+        var second = new Span("second");
+        floating.setRenderer(() -> second);
+
+        assertEquals(1, headroom.getElement().getChildCount());
+        assertEquals(second.getElement(), headroom.getElement().getChild(0));
     }
 
     @Test
-    void setCondensedBottomRenderer_acceptsNull_withoutThrowing() {
+    void asFloating_setRenderer_acceptsNull_withoutThrowing() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        assertSame(headroom, headroom.setCondensedBottomRenderer(null));
+        var floating = headroom.getCondensedTop().asFloating();
+        assertSame(floating, floating.setRenderer(null));
+    }
+
+    @Test
+    void asRibbon_setRenderer_acceptsNull_withoutThrowing() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var ribbon = headroom.getCondensedBottom().asRibbon();
+        assertSame(ribbon, ribbon.setRenderer(null));
+    }
+
+    @Test
+    void asFloating_setsShapeAttribute_toFloating_whenConfigured() {
+        // Java tells app-headroom.ts directly, via this attribute, which shape (if
+        // any) is configured - rather than that side inferring it by observing
+        // slot/DOM content itself. See ATTR_CONDENSED_TOP_SHAPE's own doc.
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertFalse(headroom.getElement().hasAttribute(AppHeadroom.ATTR_CONDENSED_TOP_SHAPE));
+
+        var floating = headroom.getCondensedTop().asFloating();
+        floating.setRenderer(() -> new Span("condensed top"));
+        assertEquals(AppHeadroom.SHAPE_FLOATING,
+                headroom.getElement().getAttribute(AppHeadroom.ATTR_CONDENSED_TOP_SHAPE));
+
+        floating.setRenderer(null);
+        assertFalse(headroom.getElement().hasAttribute(AppHeadroom.ATTR_CONDENSED_TOP_SHAPE));
+    }
+
+    @Test
+    void asRibbon_setsShapeAttribute_toRibbon_whenConfigured() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertFalse(headroom.getElement().hasAttribute(AppHeadroom.ATTR_CONDENSED_BOTTOM_SHAPE));
+
+        var ribbon = headroom.getCondensedBottom().asRibbon();
+        ribbon.setRenderer(() -> new Span("condensed bottom"));
+        assertEquals(AppHeadroom.SHAPE_RIBBON,
+                headroom.getElement().getAttribute(AppHeadroom.ATTR_CONDENSED_BOTTOM_SHAPE));
+
+        ribbon.setRenderer(null);
+        assertFalse(headroom.getElement().hasAttribute(AppHeadroom.ATTR_CONDENSED_BOTTOM_SHAPE));
+    }
+
+    @Test
+    void asRibbon_afterAsFloating_tearsDownThePreviouslyBuiltFloatingComponent() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        headroom.getCondensedTop().asFloating().setRenderer(() -> new Span("floating"));
+        assertEquals(1, headroom.getElement().getChildCount());
+
+        headroom.getCondensedTop().asRibbon().setRenderer(() -> new Span("ribbon content"));
+
+        assertEquals(1, headroom.getElement().getChildCount());
+        assertEquals(AppHeadroom.SHAPE_RIBBON,
+                headroom.getElement().getAttribute(AppHeadroom.ATTR_CONDENSED_TOP_SHAPE));
+    }
+
+    @Test
+    void asRibbon_setRenderer_nestsTheSuppliedComponent_insideAnAppHeadroomOwnedFrame() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var content = new Span("condensed bottom");
+
+        headroom.getCondensedBottom().asRibbon().setRenderer(() -> content);
+
+        var frame = headroom.getElement().getChild(0);
+        assertNotNull(frame);
+        assertEquals(content.getElement(), frame.getChild(0));
+    }
+
+    @Test
+    void asRibbon_frame_defaultsToVaadinBackgroundContainer() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var ribbon = headroom.getCondensedBottom().asRibbon();
+        ribbon.setRenderer(() -> new Span("condensed bottom"));
+
+        assertEquals("var(--vaadin-background-container)", ribbon.getStyle().get("background"));
+    }
+
+    @Test
+    void asRibbon_getStyle_letsAppOverrideTheDefaultBackground() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var ribbon = headroom.getCondensedBottom().asRibbon();
+        ribbon.setRenderer(() -> new Span("condensed bottom"));
+
+        ribbon.getStyle().setBackgroundColor("red");
+
+        assertEquals("red", ribbon.getStyle().get("background-color"));
+    }
+
+    @Test
+    void asRibbon_getStyle_throwsIllegalStateException_beforeSetRendererIsCalled() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var ribbon = headroom.getCondensedBottom().asRibbon();
+        assertThrows(IllegalStateException.class, ribbon::getStyle);
+    }
+
+    @Test
+    void asRibbon_frame_padsTopBar_onTheTopSide_andBottomBar_onTheBottomSide() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+
+        var topRibbon = headroom.getCondensedTop().asRibbon();
+        topRibbon.setRenderer(() -> new Span("condensed top"));
+        var bottomRibbon = headroom.getCondensedBottom().asRibbon();
+        bottomRibbon.setRenderer(() -> new Span("condensed bottom"));
+
+        assertEquals("env(safe-area-inset-top, 0px)", topRibbon.getStyle().get("padding-top"));
+        assertNull(topRibbon.getStyle().get("padding-bottom"));
+        assertEquals("env(safe-area-inset-bottom, 0px)", bottomRibbon.getStyle().get("padding-bottom"));
+        assertNull(bottomRibbon.getStyle().get("padding-top"));
     }
 }

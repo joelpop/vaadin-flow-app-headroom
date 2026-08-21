@@ -15,10 +15,10 @@ import org.vaadin.addons.joelpop.appheadroom.ui.component.AppHeadroom;
  * instead) and {@link AppHeadroom#setTransitionDuration} (shortened so its
  * effect on computed CSS is easy to assert against directly). Also carries a
  * condensed top renderer so that transition-duration propagation to the
- * condensed view specifically can be asserted too - built regardless of
- * whether tracking is active, since {@code ensureCondensedComponentsBuilt()}
- * runs unconditionally at bind time, same as {@code --headroom-transition-duration}
- * itself being set in {@code _attachToTarget()} regardless of {@code active}.
+ * condensed view specifically can be asserted too - built immediately,
+ * regardless of whether tracking is active, same as
+ * {@code --headroom-transition-duration} itself being set in {@code
+ * _attachToTarget()} regardless of {@code active}.
  */
 @Route("headroom-demo-custom-thresholds")
 public class CustomThresholdsDemoView extends AppLayout {
@@ -35,17 +35,17 @@ public class CustomThresholdsDemoView extends AppLayout {
         }
         setContent(content);
 
-        AppHeadroom.applyTo(this)
+        var headroom = AppHeadroom.applyTo(this)
                 .setTopOffset(100)
                 .setHideTolerance(40)
                 .setShowTolerance(40)
                 .setTabletMinShortSidePx(1000)
                 .setTransitionDuration(150)
-                .setActivationPredicate((deviceType, orientation) -> deviceType == AppHeadroom.DeviceType.PHONE)
-                .setCondensedTopRenderer(() -> {
-                    var span = new Span("Condensed top");
-                    span.setId(CONDENSED_TOP_ID);
-                    return span;
-                });
+                .setActivationPredicate((deviceType, orientation) -> deviceType == AppHeadroom.DeviceType.PHONE);
+        headroom.getCondensedTop().asFloating().setRenderer(() -> {
+            var span = new Span("Condensed top");
+            span.setId(CONDENSED_TOP_ID);
+            return span;
+        });
     }
 }

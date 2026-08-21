@@ -109,6 +109,89 @@ class AppHeadroomIT {
     }
 
     @Test
+    void navbarTop_becomesInvisible_onlyAfterTheSlideOutAnimationFinishes_andVisibleAgainImmediatelyOnRestore() {
+        // visibility is transitioned alongside transform, at a matching duration,
+        // specifically so a bar's content that doesn't respond to transform at all
+        // (e.g. an AppLayout extension's own popover/overlay-based UI escaping the
+        // normal paint hierarchy) still genuinely disappears - visibility is
+        // inherited, so it reaches such a descendant regardless of how it renders,
+        // where transform alone would not. See the styles comment in
+        // app-headroom.ts for why this needs no JS timing of its own: CSS already
+        // defines a discrete property like visibility to flip only at the very end
+        // of a transition toward hidden, and at the very start toward visible.
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
+
+        scrollTo(contentEl, 500); // past topOffset(100) + hideTolerance(40)
+
+        // Mid-slide-out (well before the 600ms default transition completes) - still
+        // visible, not yet hidden, so the slide-out itself stays visible throughout.
+        page.waitForTimeout(200);
+        assertEquals("visible", (String) navbarTop.evaluate("el => getComputedStyle(el).visibility"),
+                "navbar-top should still be visible mid-slide-out, not hidden before the animation finishes");
+
+        // Once fully settled off-screen, now hidden.
+        page.waitForTimeout(TRANSITION_SETTLE_MS - 200);
+        assertEquals("hidden", (String) navbarTop.evaluate("el => getComputedStyle(el).visibility"),
+                "navbar-top should be hidden once the slide-out animation has fully finished");
+
+        scrollTo(contentEl, 500 - 41); // > showTolerance(40) upward from the unpin point
+
+        // Immediately on restore (well before the slide-in animation completes) -
+        // already visible again, not waiting for the slide-in to finish, so the
+        // slide-in itself is visible throughout rather than snapping into view at
+        // the end.
+        page.waitForTimeout(50);
+        assertEquals("visible", (String) navbarTop.evaluate("el => getComputedStyle(el).visibility"),
+                "navbar-top should already be visible again immediately on restore, not just once the slide-in finishes");
+    }
+
+    @Test
+    void navbarTop_opacity_fadesSymmetrically_inBothDirections() {
+        // opacity is what actually produces the visible fade (visibility itself has
+        // nothing to interpolate) - transitioned at the same duration as transform
+        // and visibility, in both directions, per explicit direction: since they
+        // all start and finish together on the way out, they should on the way in
+        // too, rather than opacity snapping instantly on one side only.
+        page.navigate(BASE_URL + "/headroom-demo");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator contentEl = page.locator("vaadin-app-layout div[content]");
+        Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
+
+        scrollTo(contentEl, 500); // past topOffset(100) + hideTolerance(40)
+
+        // Mid-fade-out: strictly between fully shown and fully hidden.
+        page.waitForTimeout(200);
+        double midHideOpacity = Double.parseDouble(
+                (String) navbarTop.evaluate("el => getComputedStyle(el).opacity"));
+        assertTrue(midHideOpacity > 0 && midHideOpacity < 1,
+                "navbar-top's opacity should be strictly between 0 and 1 mid-fade-out, was " + midHideOpacity);
+
+        page.waitForTimeout(TRANSITION_SETTLE_MS - 200);
+        assertEquals("0", (String) navbarTop.evaluate("el => getComputedStyle(el).opacity"),
+                "navbar-top should be fully faded out once the transition has settled");
+
+        scrollTo(contentEl, 500 - 41); // > showTolerance(40) upward from the unpin point
+
+        // Mid-fade-in: strictly between fully hidden and fully shown - if opacity
+        // instead snapped to 1 immediately (asymmetric with the fade-out), this
+        // would read exactly "1" here instead.
+        page.waitForTimeout(200);
+        double midShowOpacity = Double.parseDouble(
+                (String) navbarTop.evaluate("el => getComputedStyle(el).opacity"));
+        assertTrue(midShowOpacity > 0 && midShowOpacity < 1,
+                "navbar-top's opacity should be strictly between 0 and 1 mid-fade-in, was " + midShowOpacity);
+
+        page.waitForTimeout(TRANSITION_SETTLE_MS - 200);
+        assertEquals("1", (String) navbarTop.evaluate("el => getComputedStyle(el).opacity"),
+                "navbar-top should be fully faded in once the transition has settled");
+    }
+
+    @Test
     void scrollingBackUpPastShowTolerance_repinsLayout_andNotifiesServer() {
         page.navigate(BASE_URL + "/headroom-demo");
         page.waitForLoadState(LoadState.NETWORKIDLE); // let the deferred rAF scroll-listener setup settle first
@@ -319,7 +402,9 @@ class AppHeadroomIT {
                 AppHeadroom.ATTR_SHOW_TOLERANCE,
                 AppHeadroom.ATTR_TOP_BAR_PINNED,
                 AppHeadroom.ATTR_BOTTOM_BAR_PINNED,
-                AppHeadroom.ATTR_TRANSITION_DURATION
+                AppHeadroom.ATTR_TRANSITION_DURATION,
+                AppHeadroom.ATTR_CONDENSED_TOP_SHAPE,
+                AppHeadroom.ATTR_CONDENSED_BOTTOM_SHAPE
         );
 
         assertEquals(expected, new HashSet<>(observed),
@@ -621,6 +706,11 @@ class AppHeadroomIT {
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
         assertEquals(0, page.locator("[slot='condensed-top']").count());
+        // The wrapper <div> itself isn't rendered at all when no shape is configured -
+        // not just empty/zero-size - since render() conditionally includes it based on
+        // condensedTopShape/condensedBottomShape, which Java never sets in this scenario.
+        assertEquals(0, page.locator("app-headroom").locator(".condensed-top-wrapper").count());
+        assertEquals(0, page.locator("app-headroom").locator(".condensed-bottom-wrapper").count());
     }
 
     @Test
@@ -629,8 +719,13 @@ class AppHeadroomIT {
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
         Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
         assertEquals(1, condensedTop.count());
-        assertEquals("0", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+        // Opacity/transition live on the AppHeadroom-owned wrapper, not the app-supplied
+        // Component itself - opacity isn't an inherited CSS property, so checking the
+        // Component's own computed style here would always read "1" regardless of the
+        // wrapper's actual state.
+        assertEquals("0", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
     }
 
     @Test
@@ -641,17 +736,21 @@ class AppHeadroomIT {
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
         Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
 
         scrollTo(contentEl, 500); // past topOffset(100) + hideTolerance(40)
         page.waitForTimeout(TRANSITION_SETTLE_MS);
 
-        assertEquals("1", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+        assertEquals("1", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
         assertTrue(navbarTop.boundingBox().y < 0,
                 "real navbar-top should still be transform-hidden off-screen, was y=" + navbarTop.boundingBox().y);
         // Fade-only design: the condensed view never slides, it stays at its resting
-        // position (inset-block-start: 0) the whole time - only opacity changes.
-        assertTrue(Math.abs(condensedTop.boundingBox().y) < 1,
-                "condensed top view should stay at its resting position (y≈0), was y=" + condensedTop.boundingBox().y);
+        // position the whole time - only opacity changes. Resting position is now the
+        // reconciled default gap (8px, see the wrapper's inset-block-start), not flush
+        // 0 - checking the Component's own position (not just the wrapper's) confirms
+        // the wrapper's default centering actually placed it there too.
+        assertTrue(Math.abs(condensedTop.boundingBox().y - 8) < 1,
+                "condensed top view should stay at its resting position (y≈8), was y=" + condensedTop.boundingBox().y);
     }
 
     @Test
@@ -661,12 +760,12 @@ class AppHeadroomIT {
 
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         Locator navbarBottom = page.locator("vaadin-app-layout div[part~='navbar-bottom']");
-        Locator condensedBottom = page.locator("#" + CondensedViewDemoView.CONDENSED_BOTTOM_ID);
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-bottom-wrapper");
 
         scrollTo(contentEl, 500);
         page.waitForTimeout(TRANSITION_SETTLE_MS);
 
-        assertEquals("1", (String) condensedBottom.evaluate("el => getComputedStyle(el).opacity"));
+        assertEquals("1", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
         String transform = (String) navbarBottom.evaluate("el => getComputedStyle(el).transform");
         assertTrue(!transform.equals("none"),
                 "real navbar-bottom should be transform-hidden, was: " + transform);
@@ -678,15 +777,15 @@ class AppHeadroomIT {
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
-        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
 
         scrollTo(contentEl, 500);
         page.waitForTimeout(TRANSITION_SETTLE_MS);
-        assertEquals("1", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+        assertEquals("1", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
 
         scrollTo(contentEl, 500 - 45); // > showTolerance(40) upward from the unpin point
         page.waitForTimeout(TRANSITION_SETTLE_MS);
-        assertEquals("0", (String) condensedTop.evaluate("el => getComputedStyle(el).opacity"));
+        assertEquals("0", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
     }
 
     @Test
@@ -697,14 +796,23 @@ class AppHeadroomIT {
         page.navigate(BASE_URL + "/headroom-demo-custom-thresholds");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
-        Locator condensedTop = page.locator("#" + CustomThresholdsDemoView.CONDENSED_TOP_ID);
-        String transitionDuration = (String) condensedTop.evaluate("el => getComputedStyle(el).transitionDuration");
+        // transition lives on the wrapper, not the app-supplied Component - see
+        // condensedTopRenderer_isPresentButHidden_whileRealBarIsShown's comment.
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+        String transitionDuration = (String) wrapper.evaluate("el => getComputedStyle(el).transitionDuration");
         assertTrue(transitionDuration.contains("0.15"),
                 "expected the custom 150ms transition duration on the condensed view, was: " + transitionDuration);
     }
 
     @Test
-    void condensedBottomRenderer_neverAppears_overPinnedRailShapedBottomBar() {
+    void condensedBottomRenderer_stillAppears_overPinnedRailShapedBottomBar() {
+        // Reversed from this test's earlier assertion, by design: a condensed view is a
+        // peer element positioned relative to the viewport, with no structural
+        // relationship to whatever made the real bar rail-shaped, so the automatic
+        // pinned-rail geometry check that correctly keeps the real bar from ever hiding
+        // has no business also suppressing this - see the file header comment in
+        // app-headroom.ts. Only an explicit setBottomBarPinned still suppresses it - see
+        // condensedBottomRenderer_neverAppears_whenBottomBarExplicitlyPinned below.
         page.navigate(BASE_URL + "/headroom-demo-condensed");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
@@ -722,18 +830,19 @@ class AppHeadroomIT {
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         Locator layout = page.locator("vaadin-app-layout");
         Locator headroomHost = page.locator("app-headroom");
-        Locator condensedBottom = page.locator("#" + CondensedViewDemoView.CONDENSED_BOTTOM_ID);
+        Locator wrapper = headroomHost.locator(".condensed-bottom-wrapper");
 
         scrollTo(contentEl, 500);
         page.waitForTimeout(TRANSITION_SETTLE_MS);
 
-        // Overall scroll state still tracks correctly...
+        // Overall scroll state still tracks correctly, and the real (rail-shaped) bar
+        // never gets transform-hidden (unchanged, established by
+        // pinnedRailShapedBottomBar_isNeverTransformHidden)...
         assertThat(layout).hasAttribute("headroom-unpinned", "");
-        // ...but the rail-shaped bar's condensed view never appears either - the host
-        // attribute driving it is set inside the exact same looksLikeAPinnedRail() guard
-        // that already exempts the real bar.
-        assertThat(headroomHost).not().hasAttribute("headroom-hide-bottom", "");
-        assertEquals("0", (String) condensedBottom.evaluate("el => getComputedStyle(el).opacity"));
+        // ...but the condensed view fades in anyway - the host's own headroom-hide-bottom
+        // is no longer gated by looksLikeAPinnedRail(), only by the explicit pin.
+        assertThat(headroomHost).hasAttribute("headroom-hide-bottom", "");
+        assertEquals("1", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
     }
 
     @Test
@@ -743,13 +852,13 @@ class AppHeadroomIT {
 
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         Locator headroomHost = page.locator("app-headroom");
-        Locator condensedBottom = page.locator("#" + ExplicitPinDemoView.CONDENSED_BOTTOM_ID);
+        Locator wrapper = headroomHost.locator(".condensed-bottom-wrapper");
 
         scrollTo(contentEl, 500);
         page.waitForTimeout(TRANSITION_SETTLE_MS);
 
         assertThat(headroomHost).not().hasAttribute("headroom-hide-bottom", "");
-        assertEquals("0", (String) condensedBottom.evaluate("el => getComputedStyle(el).opacity"));
+        assertEquals("0", (String) wrapper.evaluate("el => getComputedStyle(el).opacity"));
     }
 
     @Test
@@ -771,7 +880,7 @@ class AppHeadroomIT {
     }
 
     @Test
-    void setCondensedTopRenderer_calledAgainAfterAttach_replacesPreviouslyAttachedComponent() {
+    void asFloating_setRenderer_calledAgainAfterAttach_replacesPreviouslyAttachedComponent() {
         page.navigate(BASE_URL + "/headroom-demo-condensed");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
@@ -792,17 +901,56 @@ class AppHeadroomIT {
     }
 
     @Test
-    void condensedTopRenderer_respectsSafeAreaPadding() {
+    void asFloating_wrapperInset_reconcilesDefaultGapAgainstSafeArea_viaMax() {
         // env(safe-area-inset-*) always resolves to 0 in this environment (established
         // earlier this session - the real bottom bar's own safe-area rule has no numeric
-        // IT test for the same reason), so this asserts against max()'s 9px floor rather
-        // than a genuinely non-zero override - the same accepted limitation as that rule,
-        // not a new gap introduced here.
+        // IT test for the same reason), so max(8px, 0px) resolves to the plain default
+        // gap here - not a genuinely non-zero safe-area override - the same accepted
+        // limitation as that rule, not a new gap introduced here. What this does confirm:
+        // the reconciliation is max(), not addition - if it were additive, an app-supplied
+        // Component with its own padding would show a doubled gap, which floating mode's
+        // whole design exists to avoid (see AppHeadroom.java's asFloating() Javadoc).
         page.navigate(BASE_URL + "/headroom-demo-condensed");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
-        Locator condensedTop = page.locator("#" + CondensedViewDemoView.CONDENSED_TOP_ID);
-        assertEquals("9px", (String) condensedTop.evaluate("el => getComputedStyle(el).paddingInlineStart"));
-        assertEquals("9px", (String) condensedTop.evaluate("el => getComputedStyle(el).paddingInlineEnd"));
+        Locator wrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+
+        assertEquals("8px", (String) wrapper.evaluate("el => getComputedStyle(el).insetInlineStart"));
+        assertEquals("8px", (String) wrapper.evaluate("el => getComputedStyle(el).insetInlineEnd"));
+        assertEquals("8px", (String) wrapper.evaluate("el => getComputedStyle(el).insetBlockStart"));
+    }
+
+    @Test
+    void asRibbon_wrapperStaysFlush_regardlessOfSafeArea() {
+        // The piece that was broken before this shape-aware redesign: a full-width
+        // ribbon's background needs to reach the true edge, which an inset on the
+        // wrapper (as floating mode correctly uses) would prevent.
+        page.navigate(BASE_URL + "/headroom-demo-ribbon");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        Locator topWrapper = page.locator("app-headroom").locator(".condensed-top-wrapper");
+        Locator bottomWrapper = page.locator("app-headroom").locator(".condensed-bottom-wrapper");
+
+        assertEquals("0px", (String) topWrapper.evaluate("el => getComputedStyle(el).insetInlineStart"));
+        assertEquals("0px", (String) topWrapper.evaluate("el => getComputedStyle(el).insetBlockStart"));
+        assertEquals("0px", (String) bottomWrapper.evaluate("el => getComputedStyle(el).insetBlockEnd"));
+    }
+
+    @Test
+    void asRibbon_frame_fillsFullWidth_withDefaultBackground_andSafeAreaPadding() {
+        page.navigate(BASE_URL + "/headroom-demo-ribbon");
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+
+        // The frame (AppHeadroom-owned, see AppHeadroom.java's RibbonCondensedBar) is the
+        // direct slot content, one level up from the app's own rendered Component.
+        Locator frame = page.locator("[slot='condensed-top']");
+        assertEquals("100%", (String) frame.evaluate("el => el.style.width"));
+        assertEquals("var(--vaadin-background-container)",
+                (String) frame.evaluate("el => el.style.background"));
+        // env(safe-area-inset-*) resolves to 0 in this environment (same accepted
+        // limitation noted elsewhere) - confirms the property is present and on the
+        // correct side (top for the top bar), not the numeric safe-area value itself.
+        assertEquals("0px", (String) frame.evaluate("el => getComputedStyle(el).paddingTop"));
+        assertEquals("0px", (String) frame.evaluate("el => getComputedStyle(el).paddingBottom"));
     }
 }

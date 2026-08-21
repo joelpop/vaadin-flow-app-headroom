@@ -12,8 +12,10 @@ import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.dependency.JsModule;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.page.ExtendedClientDetails;
 import com.vaadin.flow.dom.Element;
+import com.vaadin.flow.dom.Style;
 import com.vaadin.flow.function.SerializableBiPredicate;
 import com.vaadin.flow.function.SerializableRunnable;
 import com.vaadin.flow.function.SerializableSupplier;
@@ -72,10 +74,18 @@ public class AppHeadroom extends Component {
     public static final String EVENT_PINNED_CHANGED = "pinned-changed";
     /** Wire name of the {@link #setTransitionDuration} attribute. */
     public static final String ATTR_TRANSITION_DURATION = "transition-duration";
-    /** {@code slot} name a {@link #setCondensedTopRenderer} Component's element is attached under. */
+    /** {@code slot} name the top condensed view's element is attached under. */
     public static final String SLOT_CONDENSED_TOP = "condensed-top";
-    /** {@code slot} name a {@link #setCondensedBottomRenderer} Component's element is attached under. */
+    /** {@code slot} name the bottom condensed view's element is attached under. */
     public static final String SLOT_CONDENSED_BOTTOM = "condensed-bottom";
+    /** Wire name of the attribute telling app-headroom.ts which shape (if any) the top condensed view is. */
+    public static final String ATTR_CONDENSED_TOP_SHAPE = "condensed-top-shape";
+    /** Wire name of the attribute telling app-headroom.ts which shape (if any) the bottom condensed view is. */
+    public static final String ATTR_CONDENSED_BOTTOM_SHAPE = "condensed-bottom-shape";
+    /** {@link #ATTR_CONDENSED_TOP_SHAPE}/{@link #ATTR_CONDENSED_BOTTOM_SHAPE} value for {@link CondensedBar#asFloating()}. */
+    public static final String SHAPE_FLOATING = "floating";
+    /** {@link #ATTR_CONDENSED_TOP_SHAPE}/{@link #ATTR_CONDENSED_BOTTOM_SHAPE} value for {@link CondensedBar#asRibbon()}. */
+    public static final String SHAPE_RIBBON = "ribbon";
 
     /**
      * Default physical screen shorter-side threshold, in CSS pixels, used by
@@ -96,15 +106,12 @@ public class AppHeadroom extends Component {
     // See setTabletMinShortSidePx() - must be set before the target layout attaches to take
     // effect, since detectDeviceType() only ever runs once, at first attach.
     private int tabletMinShortSidePx = DEFAULT_TABLET_MIN_SHORT_SIDE_PX;
-    // Null means "no condensed view" - a legitimate, permanent value, not something to
-    // reset away from - see setCondensedTopRenderer/setCondensedBottomRenderer.
-    private SerializableSupplier<Component> condensedTopRenderer;
-    private SerializableSupplier<Component> condensedBottomRenderer;
-    // Memoized result of the corresponding renderer above - built at most once per
-    // renderer "generation" (i.e. per setter call that actually changes it), the first
-    // time there's an attached target to build it against.
-    private Component condensedTopComponent;
-    private Component condensedBottomComponent;
+    // See getCondensedTop()/getCondensedBottom() - constructed once, eagerly, since every
+    // AppHeadroom instance has exactly one of each, always.
+    private final CondensedBar condensedTop =
+            new CondensedBar(this, SLOT_CONDENSED_TOP, ATTR_CONDENSED_TOP_SHAPE, true);
+    private final CondensedBar condensedBottom =
+            new CondensedBar(this, SLOT_CONDENSED_BOTTOM, ATTR_CONDENSED_BOTTOM_SHAPE, false);
 
     private AppHeadroom() {}
 
@@ -158,7 +165,6 @@ public class AppHeadroom extends Component {
         if (h.deviceType == null) {
             wireDeviceAndOrientationDetection(h, ui);
         }
-        h.ensureCondensedComponentsBuilt();
     }
 
     // Device type and orientation tracking are both wired once, at first attach — Signal.effect
@@ -246,75 +252,210 @@ public class AppHeadroom extends Component {
     }
 
     /**
-     * Sets a lazily-built, small alternate Component to cross-fade into view in place
-     * of the top bar while it's scroll-hidden. Default {@code null}: nothing is shown
-     * while hidden, same as before this method existed. Returns {@code this} for
-     * chaining.
+     * The top bar's condensed-view accessor — a small alternate view that can
+     * cross-fade into place while the real top bar is scroll-hidden. Shape it
+     * with {@link CondensedBar#asFloating()} or {@link CondensedBar#asRibbon()}
+     * before supplying content; neither is configured by default, so nothing
+     * shows while hidden, same as before this feature existed.
      *
-     * <p>{@code renderer} is invoked at most once, the first time it's actually needed
-     * (once the target {@link AppLayout} is attached) — not eagerly when this method is
-     * called. Calling this again (including with {@code null}) tears down any
-     * previously-built condensed Component first.
-     *
-     * <p>Never shown for a top bar that never hides in the first place — the automatic
-     * pinned-rail geometry check and {@link #setTopBarPinned} both apply to the
-     * condensed view exactly as they already do to the real bar.
+     * <p>Fades on scroll position alone, the same as the real bar. The one
+     * thing that suppresses it: an explicit {@link #setTopBarPinned}{@code
+     * (true)} — a deliberate "never hide this" declaration from application
+     * code. The automatic pinned-rail geometry check that can similarly keep
+     * the real bar from ever hiding does <em>not</em> also suppress this —
+     * that check has no way to know whether a permanently-visible real bar
+     * and an app-supplied condensed view are related at all, so it only ever
+     * affects the real bar's own slide-away.
      */
-    public AppHeadroom setCondensedTopRenderer(SerializableSupplier<Component> renderer) {
-        condensedTopRenderer = renderer;
-        condensedTopComponent = rebuildCondensedComponent(condensedTopComponent, renderer, SLOT_CONDENSED_TOP);
-        return this;
+    public CondensedBar getCondensedTop() {
+        return condensedTop;
     }
 
-    /** Same as {@link #setCondensedTopRenderer}, for the bottom bar. */
-    public AppHeadroom setCondensedBottomRenderer(SerializableSupplier<Component> renderer) {
-        condensedBottomRenderer = renderer;
-        condensedBottomComponent = rebuildCondensedComponent(condensedBottomComponent, renderer, SLOT_CONDENSED_BOTTOM);
-        return this;
+    /** Same as {@link #getCondensedTop()}, for the bottom bar. */
+    public CondensedBar getCondensedBottom() {
+        return condensedBottom;
     }
 
-    // Tears down `existing` if present, then - only if this instance is already bound to
-    // a live UI (getElement().getParent() != null; this instance is only ever parented
-    // under the UI root by bindToTarget(), so this is a reliable "already attached at
-    // least once" check) - builds and attaches the new one immediately, since the
-    // renderer was just (re)configured on an already-running instance. If not yet
-    // attached, building is deferred entirely to ensureCondensedComponentsBuilt(),
-    // called once from bindToTarget() at first attach - that's the "lazy" half.
-    private Component rebuildCondensedComponent(Component existing,
-            SerializableSupplier<Component> renderer, String slot) {
-        if (existing != null) {
-            getElement().removeChild(existing.getElement());
+    /**
+     * One bar's condensed-view accessor (see {@link #getCondensedTop()}/
+     * {@link #getCondensedBottom()}) — pick a shape via {@link #asFloating()}
+     * or {@link #asRibbon()} to get a shape-specific accessor exposing only
+     * the methods that make sense for it, the same pattern {@code Grid}'s
+     * {@code asSingleSelect()}/{@code asMultiSelect()} already use for an
+     * analogous "pick one of a few mutually-exclusive modes" choice.
+     *
+     * <p>Deliberately owns none of the app's own content, only which shape
+     * is currently configured — the app is never asked to get positioning or
+     * safe-area handling right itself; whichever shape it picks owns that
+     * entirely, so the app only ever supplies content.
+     */
+    public static final class CondensedBar {
+        private final AppHeadroom owner;
+        private final String slotName;
+        private final String shapeAttribute;
+        private final boolean top;
+        // Whatever's currently the direct light-DOM slot content - the app's own
+        // Component for asFloating(), or the AppHeadroom-owned frame Div wrapping it
+        // for asRibbon(). Null means nothing built yet (or torn down), same
+        // permanent-value reasoning as this file's other nullable fields.
+        private Component slotComponent;
+
+        private CondensedBar(AppHeadroom owner, String slotName, String shapeAttribute, boolean top) {
+            this.owner = owner;
+            this.slotName = slotName;
+            this.shapeAttribute = shapeAttribute;
+            this.top = top;
         }
-        if (renderer != null && getElement().getParent() != null) {
-            return attachCondensedComponent(renderer, slot);
+
+        /**
+         * Shapes this bar's condensed view as a small, floating, auto-centered
+         * Component. {@code AppHeadroom} owns all of its positioning and
+         * safe-area clearance (reconciled against a sensible built-in default
+         * gap, never simply added on top of whatever padding the Component
+         * itself has) — supply only content; there's nothing else to configure.
+         *
+         * <p>Calling this again, or {@link #asRibbon()}, tears down whatever
+         * this bar previously had first.
+         */
+        public FloatingCondensedBar asFloating() {
+            tearDown();
+            return new FloatingCondensedBar(this);
         }
-        return null;
+
+        /**
+         * Shapes this bar's condensed view as a full-width, opaque ribbon —
+         * background flush to the true screen edge, extending into the safe
+         * area exactly like the real bar's own landscape treatment, with
+         * only the content inset from the unsafe zone. Defaults to {@code
+         * var(--vaadin-background-container)} (a base-theme property present
+         * under any theme, light/dark-aware automatically); override via the
+         * returned accessor's {@link RibbonCondensedBar#getStyle()} if needed
+         * — expected to be rare, since the default already fits any theme.
+         *
+         * <p>Calling this again, or {@link #asFloating()}, tears down
+         * whatever this bar previously had first.
+         */
+        public RibbonCondensedBar asRibbon() {
+            tearDown();
+            return new RibbonCondensedBar(this);
+        }
+
+        private void tearDown() {
+            if (slotComponent != null) {
+                owner.getElement().removeChild(slotComponent.getElement());
+                slotComponent = null;
+            }
+            owner.getElement().removeAttribute(shapeAttribute);
+        }
+
+        // Rebuilds this bar's direct slot content immediately - deliberately
+        // unconditional on this instance's own attach state, same as this file's
+        // other Element-subtree-assembly methods: an Element subtree can be
+        // assembled before it's attached; whatever's already attached to this peer
+        // element when it does attach comes along with it. Also sets/clears
+        // shapeAttribute at this same moment - app-headroom.ts's render() only
+        // renders a bar's wrapper <div> when the matching shape property says so,
+        // rather than inferring presence by observing slot/DOM content itself.
+        // Java already knows for certain; it just says so.
+        private void setSlotComponent(String shape, Component newSlotComponent) {
+            tearDown();
+            if (newSlotComponent == null) {
+                return;
+            }
+            newSlotComponent.getElement().setAttribute("slot", slotName);
+            owner.getElement().appendChild(newSlotComponent.getElement());
+            owner.getElement().setAttribute(shapeAttribute, shape);
+            slotComponent = newSlotComponent;
+        }
+
+        private boolean isTop() {
+            return top;
+        }
     }
 
-    private Component attachCondensedComponent(SerializableSupplier<Component> renderer, String slot) {
-        var built = renderer.get();
-        built.getElement().setAttribute("slot", slot);
-        getElement().appendChild(built.getElement());
-        return built;
+    /** {@link CondensedBar#asFloating()}'s shape-specific accessor. */
+    public static final class FloatingCondensedBar {
+        private final CondensedBar bar;
+
+        private FloatingCondensedBar(CondensedBar bar) {
+            this.bar = bar;
+        }
+
+        /**
+         * Sets the Component to show, built and attached immediately. {@code
+         * null} (the default) shows nothing while the real bar is hidden.
+         * Calling this again (including with {@code null}) tears down
+         * whatever was previously built first. Returns {@code this} for
+         * chaining.
+         */
+        public FloatingCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
+            bar.setSlotComponent(SHAPE_FLOATING, renderer == null ? null : renderer.get());
+            return this;
+        }
     }
 
-    // Builds whichever condensed component(s) are configured but not yet built - called
-    // once from bindToTarget() at first attach, mirroring how
-    // wireDeviceAndOrientationDetection() is similarly deferred to first attach. A no-op
-    // for any renderer left null, and re-entrant-safe on later re-attaches (already-built
-    // components are skipped).
-    private void ensureCondensedComponentsBuilt() {
-        if (condensedTopComponent == null && condensedTopRenderer != null) {
-            condensedTopComponent = attachCondensedComponent(condensedTopRenderer, SLOT_CONDENSED_TOP);
+    /** {@link CondensedBar#asRibbon()}'s shape-specific accessor. */
+    public static final class RibbonCondensedBar {
+        private final CondensedBar bar;
+        // The AppHeadroom-owned frame the app's rendered Component is nested inside -
+        // see setRenderer(). Null until the first non-null setRenderer() call.
+        private Div frame;
+
+        private RibbonCondensedBar(CondensedBar bar) {
+            this.bar = bar;
         }
-        if (condensedBottomComponent == null && condensedBottomRenderer != null) {
-            condensedBottomComponent = attachCondensedComponent(condensedBottomRenderer, SLOT_CONDENSED_BOTTOM);
+
+        /**
+         * Sets the Component to show, nested inside an {@code AppHeadroom}-owned
+         * frame built and attached immediately. {@code null} (the default)
+         * shows nothing while the real bar is hidden. Calling this again
+         * (including with {@code null}) tears down whatever was previously
+         * built first. Returns {@code this} for chaining.
+         */
+        public RibbonCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
+            if (renderer == null) {
+                bar.setSlotComponent(SHAPE_RIBBON, null);
+                frame = null;
+                return this;
+            }
+            var newFrame = new Div(renderer.get());
+            newFrame.setWidthFull();
+            newFrame.getStyle().setBackground("var(--vaadin-background-container)");
+            if (bar.isTop()) {
+                newFrame.getStyle().setPaddingTop("env(safe-area-inset-top, 0px)");
+            }
+            else {
+                newFrame.getStyle().setPaddingBottom("env(safe-area-inset-bottom, 0px)");
+            }
+            bar.setSlotComponent(SHAPE_RIBBON, newFrame);
+            frame = newFrame;
+            return this;
+        }
+
+        /**
+         * The frame's own style — overrides the default {@code
+         * var(--vaadin-background-container)} background, or anything else
+         * about the frame. A last resort, not the primary way to configure
+         * this: most apps never need it, since the default already fits any
+         * theme.
+         *
+         * @throws IllegalStateException if {@link #setRenderer} hasn't been
+         *         called with a non-{@code null} argument yet
+         */
+        public Style getStyle() {
+            if (frame == null) {
+                throw new IllegalStateException(
+                        "setRenderer(...) must be called with a non-null renderer before getStyle()");
+            }
+            return frame.getStyle();
         }
     }
 
     /**
      * Explicitly overrides whether the top bar is treated as pinned (never
-     * hidden), regardless of the automatic position/shape inference.
+     * hidden), regardless of the automatic position/shape inference. Also
+     * suppresses {@link #getCondensedTop()}'s condensed view, unlike the
+     * automatic inference, which only ever affects the real bar.
      *
      * <p>Not called directly by any {@link AppLayout} extension — extensions
      * have no reason to know {@code AppHeadroom} exists. Instead, this is meant
