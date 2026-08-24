@@ -880,7 +880,7 @@ class AppHeadroomIT {
     }
 
     @Test
-    void asFloating_setRenderer_calledAgainAfterAttach_replacesPreviouslyAttachedComponent() {
+    void asFloating_setComponent_calledAgainAfterAttach_replacesPreviouslyAttachedComponent() {
         page.navigate(BASE_URL + "/headroom-demo-condensed");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 

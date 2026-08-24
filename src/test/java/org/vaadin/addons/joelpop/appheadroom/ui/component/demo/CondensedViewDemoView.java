@@ -31,23 +31,19 @@ public class CondensedViewDemoView extends AppLayout {
                 .setHideTolerance(40)
                 .setShowTolerance(40);
 
-        headroom.getCondensedTop().asFloating().setRenderer(() -> {
-            var span = new Span("Condensed top");
-            span.setId(CONDENSED_TOP_ID);
-            return span;
-        });
-        headroom.getCondensedBottom().asFloating().setRenderer(() -> {
-            var span = new Span("Condensed bottom");
-            span.setId(CONDENSED_BOTTOM_ID);
-            return span;
-        });
+        var condensedTop = new Span("Condensed top");
+        condensedTop.setId(CONDENSED_TOP_ID);
+        headroom.getCondensedTop().asFloating().setComponent(condensedTop);
 
-        var replaceButton = new Button("Replace condensed top", event ->
-                headroom.getCondensedTop().asFloating().setRenderer(() -> {
-                    var span = new Span("Replaced condensed top");
-                    span.setId(REPLACED_CONDENSED_TOP_ID);
-                    return span;
-                }));
+        var condensedBottom = new Span("Condensed bottom");
+        condensedBottom.setId(CONDENSED_BOTTOM_ID);
+        headroom.getCondensedBottom().asFloating().setComponent(condensedBottom);
+
+        var replaceButton = new Button("Replace condensed top", event -> {
+            var replacedCondensedTop = new Span("Replaced condensed top");
+            replacedCondensedTop.setId(REPLACED_CONDENSED_TOP_ID);
+            headroom.getCondensedTop().asFloating().setComponent(replacedCondensedTop);
+        });
         replaceButton.setId(REPLACE_CONDENSED_TOP_BUTTON_ID);
 
         addToNavbar(new H3("Condensed views demo"), replaceButton);

@@ -27,16 +27,13 @@ public class RibbonCondensedViewDemoView extends AppLayout {
                 .setHideTolerance(40)
                 .setShowTolerance(40);
 
-        headroom.getCondensedTop().asRibbon().setRenderer(() -> {
-            var span = new Span("Condensed top");
-            span.setId(CONDENSED_TOP_ID);
-            return span;
-        });
-        headroom.getCondensedBottom().asRibbon().setRenderer(() -> {
-            var span = new Span("Condensed bottom");
-            span.setId(CONDENSED_BOTTOM_ID);
-            return span;
-        });
+        var condensedTop = new Span("Condensed top");
+        condensedTop.setId(CONDENSED_TOP_ID);
+        headroom.getCondensedTop().asRibbon().setComponent(condensedTop);
+
+        var condensedBottom = new Span("Condensed bottom");
+        condensedBottom.setId(CONDENSED_BOTTOM_ID);
+        headroom.getCondensedBottom().asRibbon().setComponent(condensedBottom);
 
         addToNavbar(new H3("Ribbon condensed views demo"));
         addToNavbar(true, new Span("Bottom bar"));

@@ -36,10 +36,8 @@ public class ExplicitPinDemoView extends AppLayout {
                 .setHideTolerance(40)
                 .setShowTolerance(40)
                 .setBottomBarPinned(true);
-        headroom.getCondensedBottom().asFloating().setRenderer(() -> {
-            var span = new Span("Condensed bottom");
-            span.setId(CONDENSED_BOTTOM_ID);
-            return span;
-        });
+        var condensedBottom = new Span("Condensed bottom");
+        condensedBottom.setId(CONDENSED_BOTTOM_ID);
+        headroom.getCondensedBottom().asFloating().setComponent(condensedBottom);
     }
 }

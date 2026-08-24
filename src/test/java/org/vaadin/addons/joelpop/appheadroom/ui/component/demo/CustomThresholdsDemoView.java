@@ -42,10 +42,8 @@ public class CustomThresholdsDemoView extends AppLayout {
                 .setTabletMinShortSidePx(1000)
                 .setTransitionDuration(150)
                 .setActivationPredicate((deviceType, orientation) -> deviceType == AppHeadroom.DeviceType.PHONE);
-        headroom.getCondensedTop().asFloating().setRenderer(() -> {
-            var span = new Span("Condensed top");
-            span.setId(CONDENSED_TOP_ID);
-            return span;
-        });
+        var condensedTop = new Span("Condensed top");
+        condensedTop.setId(CONDENSED_TOP_ID);
+        headroom.getCondensedTop().asFloating().setComponent(condensedTop);
     }
 }

@@ -382,23 +382,44 @@ public class AppHeadroom extends Component {
         }
 
         /**
-         * Sets the Component to show, built and attached immediately. {@code
-         * null} (the default) shows nothing while the real bar is hidden.
-         * Calling this again (including with {@code null}) tears down
-         * whatever was previously built first. Returns {@code this} for
-         * chaining.
+         * Sets the Component to show, attached immediately. {@code null}
+         * (the default) shows nothing while the real bar is hidden. Calling
+         * this again (including with {@code null}) tears down whatever was
+         * previously built first. Returns {@code this} for chaining.
+         *
+         * <p>This is a "set once" operation, not a repeatedly-invoked
+         * renderer — {@code AppHeadroom} never calls this again on your
+         * behalf (e.g. on navigation). For content that needs to change
+         * over the layout's lifetime (a page title that follows the
+         * current route, for example), build the Component once and have
+         * it react to a {@link com.vaadin.flow.signals.Signal} your own
+         * navigation-aware code updates, rather than calling this again.
          */
-        public FloatingCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
-            bar.setSlotComponent(SHAPE_FLOATING, renderer == null ? null : renderer.get());
+        public FloatingCondensedBar setComponent(Component component) {
+            bar.setSlotComponent(SHAPE_FLOATING, component);
             return this;
+        }
+
+        /**
+         * @deprecated Use {@link #setComponent(Component)} instead. The
+         *             supplier here is always invoked exactly once,
+         *             immediately, on the calling thread — never lazily,
+         *             never more than once — so it adds indirection without
+         *             adding either laziness or repeated invocation.
+         *             Calling this delegates to {@link
+         *             #setComponent(Component)}.
+         */
+        @Deprecated(since = "25.1.1")
+        public FloatingCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
+            return setComponent(renderer == null ? null : renderer.get());
         }
     }
 
     /** {@link CondensedBar#asRibbon()}'s shape-specific accessor. */
     public static final class RibbonCondensedBar {
         private final CondensedBar bar;
-        // The AppHeadroom-owned frame the app's rendered Component is nested inside -
-        // see setRenderer(). Null until the first non-null setRenderer() call.
+        // The AppHeadroom-owned frame the app's Component is nested inside -
+        // see setComponent(). Null until the first non-null setComponent() call.
         private Div frame;
 
         private RibbonCondensedBar(CondensedBar bar) {
@@ -407,18 +428,26 @@ public class AppHeadroom extends Component {
 
         /**
          * Sets the Component to show, nested inside an {@code AppHeadroom}-owned
-         * frame built and attached immediately. {@code null} (the default)
-         * shows nothing while the real bar is hidden. Calling this again
+         * frame attached immediately. {@code null} (the default) shows
+         * nothing while the real bar is hidden. Calling this again
          * (including with {@code null}) tears down whatever was previously
          * built first. Returns {@code this} for chaining.
+         *
+         * <p>This is a "set once" operation, not a repeatedly-invoked
+         * renderer — {@code AppHeadroom} never calls this again on your
+         * behalf (e.g. on navigation). For content that needs to change
+         * over the layout's lifetime (a page title that follows the
+         * current route, for example), build the Component once and have
+         * it react to a {@link com.vaadin.flow.signals.Signal} your own
+         * navigation-aware code updates, rather than calling this again.
          */
-        public RibbonCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
-            if (renderer == null) {
+        public RibbonCondensedBar setComponent(Component component) {
+            if (component == null) {
                 bar.setSlotComponent(SHAPE_RIBBON, null);
                 frame = null;
                 return this;
             }
-            var newFrame = new Div(renderer.get());
+            var newFrame = new Div(component);
             newFrame.setWidthFull();
             newFrame.getStyle().setBackground("var(--vaadin-background-container)");
             if (bar.isTop()) {
@@ -432,19 +461,33 @@ public class AppHeadroom extends Component {
         }
 
         /**
+         * @deprecated Use {@link #setComponent(Component)} instead. The
+         *             supplier here is always invoked exactly once,
+         *             immediately, on the calling thread — never lazily,
+         *             never more than once — so it adds indirection without
+         *             adding either laziness or repeated invocation.
+         *             Calling this delegates to {@link
+         *             #setComponent(Component)}.
+         */
+        @Deprecated(since = "25.1.1")
+        public RibbonCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
+            return setComponent(renderer == null ? null : renderer.get());
+        }
+
+        /**
          * The frame's own style — overrides the default {@code
          * var(--vaadin-background-container)} background, or anything else
          * about the frame. A last resort, not the primary way to configure
          * this: most apps never need it, since the default already fits any
          * theme.
          *
-         * @throws IllegalStateException if {@link #setRenderer} hasn't been
-         *         called with a non-{@code null} argument yet
+         * @throws IllegalStateException if {@link #setComponent} hasn't
+         *         been called with a non-{@code null} argument yet
          */
         public Style getStyle() {
             if (frame == null) {
                 throw new IllegalStateException(
-                        "setRenderer(...) must be called with a non-null renderer before getStyle()");
+                        "setComponent(...) must be called with a non-null component before getStyle()");
             }
             return frame.getStyle();
         }
