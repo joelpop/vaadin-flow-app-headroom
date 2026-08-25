@@ -577,7 +577,7 @@ public class AppHeadroom extends Component {
     }
 
     /**
-     * @deprecated Use {@link #CollapseChangeEvent} instead. Same underlying
+     * @deprecated Use {@link CollapseChangeEvent} instead. Same underlying
      *             event, fired alongside it whenever it fires — note the
      *             inverted value: {@link #isPinned()} (shown) is equivalent
      *             to {@code !}{@link CollapseChangeEvent#isCollapsed()}.
