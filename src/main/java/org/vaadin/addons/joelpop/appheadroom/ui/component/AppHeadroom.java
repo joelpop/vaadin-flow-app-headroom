@@ -18,7 +18,6 @@ import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.Style;
 import com.vaadin.flow.function.SerializableBiPredicate;
 import com.vaadin.flow.function.SerializableRunnable;
-import com.vaadin.flow.function.SerializableSupplier;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.flow.signals.Signal;
 
@@ -407,20 +406,6 @@ public class AppHeadroom extends Component {
             bar.setSlotComponent(SHAPE_FLOATING, component);
             return this;
         }
-
-        /**
-         * @deprecated Use {@link #setComponent(Component)} instead. The
-         *             supplier here is always invoked exactly once,
-         *             immediately, on the calling thread — never lazily,
-         *             never more than once — so it adds indirection without
-         *             adding either laziness or repeated invocation.
-         *             Calling this delegates to {@link
-         *             #setComponent(Component)}.
-         */
-        @Deprecated(since = "25.1.1")
-        public FloatingCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
-            return setComponent(renderer == null ? null : renderer.get());
-        }
     }
 
     /** {@link CondensedBar#asRibbon()}'s shape-specific accessor. */
@@ -466,20 +451,6 @@ public class AppHeadroom extends Component {
             bar.setSlotComponent(SHAPE_RIBBON, newFrame);
             frame = newFrame;
             return this;
-        }
-
-        /**
-         * @deprecated Use {@link #setComponent(Component)} instead. The
-         *             supplier here is always invoked exactly once,
-         *             immediately, on the calling thread — never lazily,
-         *             never more than once — so it adds indirection without
-         *             adding either laziness or repeated invocation.
-         *             Calling this delegates to {@link
-         *             #setComponent(Component)}.
-         */
-        @Deprecated(since = "25.1.1")
-        public RibbonCondensedBar setRenderer(SerializableSupplier<Component> renderer) {
-            return setComponent(renderer == null ? null : renderer.get());
         }
 
         /**
