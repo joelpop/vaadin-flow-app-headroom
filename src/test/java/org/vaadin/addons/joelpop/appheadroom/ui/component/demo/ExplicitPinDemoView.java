@@ -8,9 +8,10 @@ import com.vaadin.flow.router.Route;
 import org.vaadin.addons.joelpop.appheadroom.ui.component.AppHeadroom;
 
 /**
- * Demo view for the explicit setBottomBarPinned(true) override — an ordinary
- * (non-fixed, non-rail-shaped) touch-optimized bottom bar that should never
- * hide on scroll purely because the application asked for it explicitly.
+ * Demo view for the explicit setBottomBarCollapsible(false) override — an
+ * ordinary (non-fixed, non-rail-shaped) touch-optimized bottom bar that
+ * should never hide on scroll purely because the application asked for it
+ * explicitly.
  */
 @Route("headroom-demo-explicit-pin")
 public class ExplicitPinDemoView extends AppLayout {
@@ -35,7 +36,7 @@ public class ExplicitPinDemoView extends AppLayout {
                 .setTopOffset(100)
                 .setHideTolerance(40)
                 .setShowTolerance(40)
-                .setBottomBarPinned(true);
+                .setBottomBarCollapsible(false);
         var condensedBottom = new Span("Condensed bottom");
         condensedBottom.setId(CONDENSED_BOTTOM_ID);
         headroom.getCondensedBottom().asFloating().setComponent(condensedBottom);

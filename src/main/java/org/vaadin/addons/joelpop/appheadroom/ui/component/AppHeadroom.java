@@ -40,9 +40,9 @@ import java.util.Objects;
  * horizontal bar (taller than wide) is left alone automatically — a plain,
  * observable geometry fact, not something any extension has to declare. For
  * cases where that inference isn't right (or an extension's own behavior can't
- * be reliably inferred that way), {@link #setTopBarPinned} / {@link
- * #setBottomBarPinned} let calling code state it explicitly instead. See those
- * methods for how this is meant to be wired up from application code.
+ * be reliably inferred that way), {@link #setTopBarCollapsible} / {@link
+ * #setBottomBarCollapsible} let calling code state it explicitly instead. See
+ * those methods for how this is meant to be wired up from application code.
  */
 @Tag("app-headroom")
 @JsModule("./app-headroom.ts")
@@ -62,15 +62,23 @@ public class AppHeadroom extends Component {
     public static final String ATTR_HIDE_TOLERANCE = "hide-tolerance";
     /** Wire name of the {@link #setShowTolerance} attribute. */
     public static final String ATTR_SHOW_TOLERANCE = "show-tolerance";
-    /** Wire name of the {@link #setTopBarPinned} attribute. */
+    // ATTR_TOP_BAR_PINNED/ATTR_BOTTOM_BAR_PINNED/PROPERTY_PINNED/EVENT_PINNED_CHANGED
+    // keep their original wire-level names below deliberately, even though the
+    // public Java API built on them has moved to "collapsible"/"collapsed"
+    // vocabulary (see setTopBarCollapsible()/isCollapsed()) - the client-side
+    // attribute/property/event names are internal wiring only, never referenced
+    // directly by application code, so renaming them would just be churn without
+    // fixing the actual problem (the confusing public API naming) this rename
+    // addresses.
+    /** Wire name of the {@link #setTopBarCollapsible} attribute. */
     public static final String ATTR_TOP_BAR_PINNED = "top-bar-pinned";
-    /** Wire name of the {@link #setBottomBarPinned} attribute. */
+    /** Wire name of the {@link #setBottomBarCollapsible} attribute. */
     public static final String ATTR_BOTTOM_BAR_PINNED = "bottom-bar-pinned";
-    /** Wire name of the {@link #isPinned} element property. */
+    /** Wire name of the {@link #isCollapsed} element property. */
     public static final String PROPERTY_PINNED = "pinned";
     /** Wire name of the {@link #isActive} element property. */
     public static final String PROPERTY_ACTIVE = "active";
-    /** Wire name of the {@link #addPinnedChangeListener} DOM event. */
+    /** Wire name of the {@link #addCollapseChangeListener} DOM event. */
     public static final String EVENT_PINNED_CHANGED = "pinned-changed";
     /** Wire name of the {@link #setTransitionDuration} attribute. */
     public static final String ATTR_TRANSITION_DURATION = "transition-duration";
@@ -259,9 +267,9 @@ public class AppHeadroom extends Component {
      * shows while hidden, same as before this feature existed.
      *
      * <p>Fades on scroll position alone, the same as the real bar. The one
-     * thing that suppresses it: an explicit {@link #setTopBarPinned}{@code
-     * (true)} — a deliberate "never hide this" declaration from application
-     * code. The automatic pinned-rail geometry check that can similarly keep
+     * thing that suppresses it: an explicit {@link #setTopBarCollapsible}
+     * {@code (false)} — a deliberate "never hide this" declaration from
+     * application code. The automatic pinned-rail geometry check that can similarly keep
      * the real bar from ever hiding does <em>not</em> also suppress this —
      * that check has no way to know whether a permanently-visible real bar
      * and an app-supplied condensed view are related at all, so it only ever
@@ -494,10 +502,11 @@ public class AppHeadroom extends Component {
     }
 
     /**
-     * Explicitly overrides whether the top bar is treated as pinned (never
-     * hidden), regardless of the automatic position/shape inference. Also
-     * suppresses {@link #getCondensedTop()}'s condensed view, unlike the
-     * automatic inference, which only ever affects the real bar.
+     * Explicitly overrides whether the top bar can ever collapse (hide) at
+     * all, regardless of the automatic position/shape inference. {@code
+     * false} means "never collapse this" — also suppresses {@link
+     * #getCondensedTop()}'s condensed view, unlike the automatic inference,
+     * which only ever affects the real bar.
      *
      * <p>Not called directly by any {@link AppLayout} extension — extensions
      * have no reason to know {@code AppHeadroom} exists. Instead, this is meant
@@ -507,33 +516,102 @@ public class AppHeadroom extends Component {
      * it has one), reacting to whatever that extension's own public API exposes
      * about its current state and calling this method accordingly.
      */
-    public AppHeadroom setTopBarPinned(boolean pinned) {
-        getElement().setAttribute(ATTR_TOP_BAR_PINNED, pinned);
+    public AppHeadroom setTopBarCollapsible(boolean collapsible) {
+        getElement().setAttribute(ATTR_TOP_BAR_PINNED, !collapsible);
         return this;
     }
 
-    /** Same as {@link #setTopBarPinned}, for the bottom bar. */
-    public AppHeadroom setBottomBarPinned(boolean pinned) {
-        getElement().setAttribute(ATTR_BOTTOM_BAR_PINNED, pinned);
+    /** Same as {@link #setTopBarCollapsible}, for the bottom bar. */
+    public AppHeadroom setBottomBarCollapsible(boolean collapsible) {
+        getElement().setAttribute(ATTR_BOTTOM_BAR_PINNED, !collapsible);
         return this;
     }
 
     /**
-     * Whether the chrome is currently shown ({@code true}, the initial and
-     * default state) or hidden ({@code false}). Kept in sync with the client's
-     * own scroll-driven pin/unpin state; see {@link #addPinnedChangeListener}
-     * to be notified of changes instead of polling this.
+     * @deprecated Use {@link #setTopBarCollapsible(boolean)} instead — note
+     *             the inverted argument: {@code setTopBarPinned(true)} (never
+     *             collapse) is equivalent to {@code
+     *             setTopBarCollapsible(false)}. Calling this delegates to
+     *             {@link #setTopBarCollapsible(boolean)}.
+     */
+    @Deprecated(since = "25.1.1")
+    public AppHeadroom setTopBarPinned(boolean pinned) {
+        return setTopBarCollapsible(!pinned);
+    }
+
+    /**
+     * @deprecated Use {@link #setBottomBarCollapsible(boolean)} instead — see
+     *             {@link #setTopBarPinned(boolean)} for the argument-inversion
+     *             note. Calling this delegates to {@link
+     *             #setBottomBarCollapsible(boolean)}.
+     */
+    @Deprecated(since = "25.1.1")
+    public AppHeadroom setBottomBarPinned(boolean pinned) {
+        return setBottomBarCollapsible(!pinned);
+    }
+
+    /**
+     * Whether the chrome is currently collapsed/hidden ({@code true}) or
+     * expanded/shown ({@code false}, the initial and default state). Kept in
+     * sync with the client's own scroll-driven expand/collapse state; see
+     * {@link #addCollapseChangeListener} to be notified of changes instead of
+     * polling this.
      */
     @Synchronize(EVENT_PINNED_CHANGED)
-    public boolean isPinned() {
-        return getElement().getProperty(PROPERTY_PINNED, true);
+    public boolean isCollapsed() {
+        return !getElement().getProperty(PROPERTY_PINNED, true);
     }
 
     /**
-     * Fired whenever the chrome's pinned/unpinned state changes, whether
+     * @deprecated Use {@link #isCollapsed()} instead — note the inverted
+     *             return value: {@code isPinned()} (shown) is equivalent to
+     *             {@code !isCollapsed()}.
+     */
+    @Deprecated(since = "25.1.1")
+    public boolean isPinned() {
+        return !isCollapsed();
+    }
+
+    /**
+     * Fired whenever the chrome's expanded/collapsed state changes, whether
      * driven by scrolling on the client or by a server-initiated reset (e.g.
      * detaching this instance via {@link #remove()}).
      */
+    @DomEvent(EVENT_PINNED_CHANGED)
+    public static class CollapseChangeEvent extends ComponentEvent<AppHeadroom> {
+        private final boolean collapsed;
+
+        /**
+         * Constructed by Flow when the client fires {@code pinned-changed}, or
+         * directly by {@link AppHeadroom} itself for a server-initiated reset;
+         * not meant to be constructed by application code. Note the inversion:
+         * the wire event's own {@code pinned} detail means "shown," the
+         * opposite of {@code collapsed}.
+         */
+        public CollapseChangeEvent(AppHeadroom source, boolean fromClient,
+                @EventData("event.detail.pinned") boolean pinned) {
+            super(source, fromClient);
+            this.collapsed = !pinned;
+        }
+
+        /** Same value as {@link AppHeadroom#isCollapsed()} at the time this event fired. */
+        public boolean isCollapsed() {
+            return collapsed;
+        }
+    }
+
+    /** Registers a listener to be notified whenever {@link #isCollapsed()} changes. */
+    public Registration addCollapseChangeListener(ComponentEventListener<CollapseChangeEvent> listener) {
+        return addListener(CollapseChangeEvent.class, listener);
+    }
+
+    /**
+     * @deprecated Use {@link #CollapseChangeEvent} instead. Same underlying
+     *             event, fired alongside it whenever it fires — note the
+     *             inverted value: {@link #isPinned()} (shown) is equivalent
+     *             to {@code !}{@link CollapseChangeEvent#isCollapsed()}.
+     */
+    @Deprecated(since = "25.1.1")
     @DomEvent(EVENT_PINNED_CHANGED)
     public static class PinnedChangeEvent extends ComponentEvent<AppHeadroom> {
         private final boolean pinned;
@@ -549,19 +627,21 @@ public class AppHeadroom extends Component {
             this.pinned = pinned;
         }
 
-        /** Same value as {@link AppHeadroom#isPinned()} at the time this event fired. */
+        /** @deprecated Use {@code !}{@link CollapseChangeEvent#isCollapsed()} instead. */
+        @Deprecated(since = "25.1.1")
         public boolean isPinned() {
             return pinned;
         }
     }
 
-    /** Registers a listener to be notified whenever {@link #isPinned()} changes. */
+    /** @deprecated Use {@link #addCollapseChangeListener} instead. */
+    @Deprecated(since = "25.1.1")
     public Registration addPinnedChangeListener(ComponentEventListener<PinnedChangeEvent> listener) {
         return addListener(PinnedChangeEvent.class, listener);
     }
 
     /**
-     * Resets the server-visible pinned state directly, rather than relying on the
+     * Resets the server-visible expanded state directly, rather than relying on the
      * client's own {@code pinned-changed} event during teardown: when detachment is
      * server-initiated (e.g. {@code layout.remove(headroom)}), Flow stops routing
      * further client events for this component the moment removal begins, so the
@@ -571,6 +651,10 @@ public class AppHeadroom extends Component {
     protected void onDetach(DetachEvent detachEvent) {
         super.onDetach(detachEvent);
         getElement().setProperty(PROPERTY_PINNED, true);
+        // The trailing `true` here is the raw wire "pinned" (shown) value passed to
+        // each event's own constructor, not the "collapsed" value directly - see
+        // CollapseChangeEvent's constructor, which inverts it internally.
+        ComponentUtil.fireEvent(this, new CollapseChangeEvent(this, false, true));
         ComponentUtil.fireEvent(this, new PinnedChangeEvent(this, false, true));
     }
 

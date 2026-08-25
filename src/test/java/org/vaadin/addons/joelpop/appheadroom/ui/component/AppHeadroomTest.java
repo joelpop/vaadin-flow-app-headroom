@@ -123,22 +123,22 @@ class AppHeadroomTest {
     }
 
     @Test
-    void setTopBarPinned_setsBooleanAttribute_andReturnsThisForChaining() {
+    void setTopBarCollapsible_setsBooleanAttribute_andReturnsThisForChaining() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        assertSame(headroom, headroom.setTopBarPinned(true));
+        assertSame(headroom, headroom.setTopBarCollapsible(false));
         assertTrue(headroom.getElement().hasAttribute("top-bar-pinned"));
 
-        headroom.setTopBarPinned(false);
+        headroom.setTopBarCollapsible(true);
         assertFalse(headroom.getElement().hasAttribute("top-bar-pinned"));
     }
 
     @Test
-    void setBottomBarPinned_setsBooleanAttribute_andReturnsThisForChaining() {
+    void setBottomBarCollapsible_setsBooleanAttribute_andReturnsThisForChaining() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        assertSame(headroom, headroom.setBottomBarPinned(true));
+        assertSame(headroom, headroom.setBottomBarCollapsible(false));
         assertTrue(headroom.getElement().hasAttribute("bottom-bar-pinned"));
 
-        headroom.setBottomBarPinned(false);
+        headroom.setBottomBarCollapsible(true);
         assertFalse(headroom.getElement().hasAttribute("bottom-bar-pinned"));
     }
 
@@ -153,44 +153,106 @@ class AppHeadroomTest {
     }
 
     @Test
-    void isPinned_defaultsToTrue_beforeAnyClientSync() {
-        assertTrue(AppHeadroom.applyTo(new AppLayout()).isPinned());
+    void isCollapsed_defaultsToFalse_beforeAnyClientSync() {
+        assertFalse(AppHeadroom.applyTo(new AppLayout()).isCollapsed());
     }
 
     @Test
-    void isPinned_reflectsManuallySetElementProperty() {
+    void isCollapsed_reflectsManuallySetElementProperty() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
-        headroom.getElement().setProperty("pinned", false);
-        assertFalse(headroom.isPinned());
+        headroom.getElement().setProperty("pinned", false); // "pinned" (wire) means shown
+        assertTrue(headroom.isCollapsed());
     }
 
     @Test
-    void addPinnedChangeListener_invokedWithEventPayload_onFireEvent() {
+    void addCollapseChangeListener_invokedWithEventPayload_onFireEvent() {
         var headroom = AppHeadroom.applyTo(new AppLayout());
         var invocationCount = new AtomicInteger();
-        var receivedPinned = new AtomicReference<Boolean>();
+        var receivedCollapsed = new AtomicReference<Boolean>();
 
-        headroom.addPinnedChangeListener(event -> {
+        headroom.addCollapseChangeListener(event -> {
             invocationCount.incrementAndGet();
-            receivedPinned.set(event.isPinned());
+            receivedCollapsed.set(event.isCollapsed());
         });
+
+        // Third constructor argument is the raw wire "pinned" (shown) value, not
+        // "collapsed" directly - see CollapseChangeEvent's own Javadoc. pinned=false
+        // here means collapsed=true.
+        ComponentUtil.fireEvent(headroom, new AppHeadroom.CollapseChangeEvent(headroom, true, false));
+
+        assertEquals(1, invocationCount.get());
+        assertEquals(Boolean.TRUE, receivedCollapsed.get());
+    }
+
+    @Test
+    void addCollapseChangeListener_registrationRemove_stopsFurtherInvocations() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var invocationCount = new AtomicInteger();
+        var registration = headroom.addCollapseChangeListener(event -> invocationCount.incrementAndGet());
+
+        registration.remove();
+        ComponentUtil.fireEvent(headroom, new AppHeadroom.CollapseChangeEvent(headroom, true, false));
+
+        assertEquals(0, invocationCount.get());
+    }
+
+    // --- Deprecated pinned-terminology delegation coverage ---
+    // setTopBarPinned/setBottomBarPinned/isPinned/addPinnedChangeListener are
+    // deprecated in favor of setTopBarCollapsible/setBottomBarCollapsible/
+    // isCollapsed/addCollapseChangeListener - see AppHeadroom.java's Javadoc:
+    // "pinned" collided across two unrelated meanings (a static "excluded from
+    // the effect" config and a dynamic "currently shown" state). These confirm
+    // the deprecated methods still work correctly by delegating, not that they
+    // have independent behavior - including the inverted boolean on both the
+    // static-config side AND the dynamic-state side this time (isPinned() is
+    // "shown", isCollapsed() is "hidden" - opposites, unlike a same-polarity
+    // rename).
+
+    @Test
+    void setTopBarPinned_delegatesToSetTopBarCollapsible_preservingOriginalWireBehavior() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setTopBarPinned(true));
+        assertTrue(headroom.getElement().hasAttribute("top-bar-pinned"));
+
+        headroom.setTopBarPinned(false);
+        assertFalse(headroom.getElement().hasAttribute("top-bar-pinned"));
+    }
+
+    @Test
+    void setBottomBarPinned_delegatesToSetBottomBarCollapsible_preservingOriginalWireBehavior() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        assertSame(headroom, headroom.setBottomBarPinned(true));
+        assertTrue(headroom.getElement().hasAttribute("bottom-bar-pinned"));
+
+        headroom.setBottomBarPinned(false);
+        assertFalse(headroom.getElement().hasAttribute("bottom-bar-pinned"));
+    }
+
+    @Test
+    void isPinned_delegatesToIsCollapsed_negated() {
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        headroom.getElement().setProperty("pinned", false);
+
+        assertFalse(headroom.isPinned());
+        assertTrue(headroom.isCollapsed());
+        assertEquals(!headroom.isCollapsed(), headroom.isPinned());
+    }
+
+    @Test
+    void addPinnedChangeListener_stillFiresIndependently_whenPinnedChangeEventIsFired() {
+        // PinnedChangeEvent and CollapseChangeEvent are two independently
+        // @DomEvent-mapped classes for the same underlying client event -
+        // firing one doesn't automatically notify listeners of the other (see
+        // AppHeadroom.java's onDetach(), which fires both explicitly for
+        // exactly this reason). This only confirms the deprecated event class
+        // and listener registration still work on their own.
+        var headroom = AppHeadroom.applyTo(new AppLayout());
+        var invocationCount = new AtomicInteger();
+        headroom.addPinnedChangeListener(event -> invocationCount.incrementAndGet());
 
         ComponentUtil.fireEvent(headroom, new AppHeadroom.PinnedChangeEvent(headroom, true, false));
 
         assertEquals(1, invocationCount.get());
-        assertEquals(Boolean.FALSE, receivedPinned.get());
-    }
-
-    @Test
-    void addPinnedChangeListener_registrationRemove_stopsFurtherInvocations() {
-        var headroom = AppHeadroom.applyTo(new AppLayout());
-        var invocationCount = new AtomicInteger();
-        var registration = headroom.addPinnedChangeListener(event -> invocationCount.incrementAndGet());
-
-        registration.remove();
-        ComponentUtil.fireEvent(headroom, new AppHeadroom.PinnedChangeEvent(headroom, true, false));
-
-        assertEquals(0, invocationCount.get());
     }
 
     @Test

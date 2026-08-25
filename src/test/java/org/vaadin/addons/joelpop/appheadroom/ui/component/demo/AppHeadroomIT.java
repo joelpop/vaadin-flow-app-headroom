@@ -89,22 +89,22 @@ class AppHeadroomIT {
         page.waitForLoadState(LoadState.NETWORKIDLE); // let the deferred rAF scroll-listener setup settle first
 
         Locator layout = page.locator("vaadin-app-layout");
-        Locator pinnedState = page.locator("#" + HeadroomDemoView.PINNED_STATE_ID);
+        Locator expandedState = page.locator("#" + HeadroomDemoView.EXPANDED_STATE_ID);
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
 
-        assertThat(pinnedState).hasText("pinned");
+        assertThat(expandedState).hasText("expanded");
         assertThat(layout).not().hasAttribute("headroom-unpinned", "");
         assertTrue(navbarTop.boundingBox().y >= 0,
-                "navbar-top should be on-screen while pinned, was y=" + navbarTop.boundingBox().y);
+                "navbar-top should be on-screen while expanded, was y=" + navbarTop.boundingBox().y);
 
         scrollTo(contentEl, 500); // past topOffset(100) + hideTolerance(40)
 
         assertThat(layout).hasAttribute("headroom-unpinned", "");
-        assertThat(pinnedState).hasText("unpinned"); // proves the full client -> @Synchronize -> listener -> DOM round trip
+        assertThat(expandedState).hasText("collapsed"); // proves the full client -> @Synchronize -> listener -> DOM round trip
         page.waitForTimeout(TRANSITION_SETTLE_MS);
         assertTrue(navbarTop.boundingBox().y < 0,
-                "navbar-top should be translated off-screen once unpinned, was y=" + navbarTop.boundingBox().y);
+                "navbar-top should be translated off-screen once collapsed, was y=" + navbarTop.boundingBox().y);
         pauseForHumanIfHeaded();
     }
 
@@ -197,7 +197,7 @@ class AppHeadroomIT {
         page.waitForLoadState(LoadState.NETWORKIDLE); // let the deferred rAF scroll-listener setup settle first
 
         Locator layout = page.locator("vaadin-app-layout");
-        Locator pinnedState = page.locator("#" + HeadroomDemoView.PINNED_STATE_ID);
+        Locator expandedState = page.locator("#" + HeadroomDemoView.EXPANDED_STATE_ID);
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         Locator navbarTop = page.locator("vaadin-app-layout div[part~='navbar-top']");
 
@@ -205,16 +205,16 @@ class AppHeadroomIT {
         assertThat(layout).hasAttribute("headroom-unpinned", "");
         page.waitForTimeout(TRANSITION_SETTLE_MS);
         assertTrue(navbarTop.boundingBox().y < 0,
-                "navbar-top should be translated off-screen once unpinned, was y=" + navbarTop.boundingBox().y);
+                "navbar-top should be translated off-screen once collapsed, was y=" + navbarTop.boundingBox().y);
         pauseForHumanIfHeaded();
 
         scrollTo(contentEl, 500 - 41); // > showTolerance(40) upward from the unpin point
 
         assertThat(layout).not().hasAttribute("headroom-unpinned", "");
-        assertThat(pinnedState).hasText("pinned");
+        assertThat(expandedState).hasText("expanded");
         page.waitForTimeout(TRANSITION_SETTLE_MS);
         assertTrue(navbarTop.boundingBox().y >= 0,
-                "navbar-top should be back on-screen once re-pinned, was y=" + navbarTop.boundingBox().y);
+                "navbar-top should be back on-screen once re-expanded, was y=" + navbarTop.boundingBox().y);
         pauseForHumanIfHeaded();
     }
 
@@ -264,25 +264,25 @@ class AppHeadroomIT {
         page.waitForLoadState(LoadState.NETWORKIDLE); // let the deferred rAF scroll-listener setup settle first
 
         Locator layout = page.locator("vaadin-app-layout");
-        Locator pinnedState = page.locator("#" + DetachResetDemoView.PINNED_STATE_ID);
+        Locator expandedState = page.locator("#" + DetachResetDemoView.EXPANDED_STATE_ID);
         Locator contentEl = page.locator("vaadin-app-layout div[content]");
         // dispatchEvent (not click()) bypasses Playwright's scroll-into-view actionability
-        // check, which would otherwise reset our deliberately-unpinned scroll position.
+        // check, which would otherwise reset our deliberately-collapsed scroll position.
         Locator removeButton = page.locator("#" + DetachResetDemoView.REMOVE_BUTTON_ID);
 
         scrollTo(contentEl, 500);
         assertThat(layout).hasAttribute("headroom-unpinned", "");
-        assertThat(pinnedState).hasText("unpinned");
+        assertThat(expandedState).hasText("collapsed");
 
         removeButton.dispatchEvent("click");
 
         assertThat(layout).not().hasAttribute("headroom-unpinned", "");
         assertThat(layout).not().hasAttribute("headroom-enabled", "");
-        assertThat(pinnedState).hasText("pinned"); // proves the reset reaches the server, not just the client attribute
+        assertThat(expandedState).hasText("expanded"); // proves the reset reaches the server, not just the client attribute
     }
 
     @Test
-    void explicitlyPinnedBottomBar_isNeverTransformHidden() {
+    void explicitlyNonCollapsibleBottomBar_isNeverTransformHidden() {
         page.navigate(BASE_URL + "/headroom-demo-explicit-pin");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
@@ -295,12 +295,12 @@ class AppHeadroomIT {
 
         // Overall scroll state still tracks correctly...
         assertThat(layout).hasAttribute("headroom-unpinned", "");
-        // ...but the explicitly-pinned bar is never transform-hidden, even though
-        // it's an ordinary bar (not fixed, not rail-shaped) that looksLikeAPinnedRail()
-        // alone would NOT have exempted.
+        // ...but the explicitly-non-collapsible bar is never transform-hidden, even
+        // though it's an ordinary bar (not fixed, not rail-shaped) that
+        // looksLikeAPinnedRail() alone would NOT have exempted.
         String transform = (String) bottomPart.evaluate("el => getComputedStyle(el).transform");
         assertTrue(transform.equals("none"),
-                "explicitly-pinned navbar-bottom should NOT be transformed/hidden, was: " + transform);
+                "explicitly-non-collapsible navbar-bottom should NOT be transformed/hidden, was: " + transform);
     }
 
     @Test
@@ -811,8 +811,9 @@ class AppHeadroomIT {
         // relationship to whatever made the real bar rail-shaped, so the automatic
         // pinned-rail geometry check that correctly keeps the real bar from ever hiding
         // has no business also suppressing this - see the file header comment in
-        // app-headroom.ts. Only an explicit setBottomBarPinned still suppresses it - see
-        // condensedBottomRenderer_neverAppears_whenBottomBarExplicitlyPinned below.
+        // app-headroom.ts. Only an explicit setBottomBarCollapsible(false) still
+        // suppresses it - see
+        // condensedBottomRenderer_neverAppears_whenBottomBarNotCollapsible below.
         page.navigate(BASE_URL + "/headroom-demo-condensed");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 
@@ -846,7 +847,7 @@ class AppHeadroomIT {
     }
 
     @Test
-    void condensedBottomRenderer_neverAppears_whenBottomBarExplicitlyPinned() {
+    void condensedBottomRenderer_neverAppears_whenBottomBarNotCollapsible() {
         page.navigate(BASE_URL + "/headroom-demo-explicit-pin");
         page.waitForLoadState(LoadState.NETWORKIDLE);
 

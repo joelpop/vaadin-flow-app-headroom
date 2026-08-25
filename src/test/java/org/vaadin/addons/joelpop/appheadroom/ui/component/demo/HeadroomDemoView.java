@@ -11,15 +11,15 @@ import org.vaadin.addons.joelpop.appheadroom.ui.component.AppHeadroom;
 @Route("headroom-demo")
 public class HeadroomDemoView extends AppLayout {
 
-    public static final String PINNED_STATE_ID = "pinned-state";
+    public static final String EXPANDED_STATE_ID = "expanded-state";
 
     public HeadroomDemoView() {
         addToNavbar(new H3("Headroom demo"));
 
-        var pinnedState = new Span("pinned");
-        pinnedState.setId(PINNED_STATE_ID);
+        var expandedState = new Span("expanded");
+        expandedState.setId(EXPANDED_STATE_ID);
 
-        var content = new Div(pinnedState);
+        var content = new Div(expandedState);
         content.getStyle().set("min-height", "6000px");
         for (int i = 0; i < 80; i++) {
             content.add(new Paragraph("Filler content line " + i));
@@ -30,7 +30,7 @@ public class HeadroomDemoView extends AppLayout {
                 .setTopOffset(100)
                 .setHideTolerance(40)
                 .setShowTolerance(40);
-        headroom.addPinnedChangeListener(event ->
-                pinnedState.setText(event.isPinned() ? "pinned" : "unpinned"));
+        headroom.addCollapseChangeListener(event ->
+                expandedState.setText(event.isCollapsed() ? "collapsed" : "expanded"));
     }
 }
